@@ -24,7 +24,7 @@ function usageCard(meta, prefix, color = 0x5865F2) {
     '```',
     `Syntax:  ${meta.usage}`,
     `Example: ${meta.example}`,
-    meta.aliases?.length ? `Aliases: ${meta.aliases.join('  ')}` : null,
+    meta.aliases?.length ? `Aliases: ${meta.aliases.map(a => a.startsWith('!') ? prefix + a.slice(1) : a).join('  ')}` : null,
     '```',
   ].filter(Boolean).join('\n');
 
