@@ -11,18 +11,11 @@ export async function execute(client) {
   console.log(`📊 Serving ${client.guilds.cache.size} guilds | ${client.users.cache.size} users`);
 
   client.user.setPresence({
-    activities: [{ name: `@unheardlust | ${client.guilds.cache.size} servers`, type: ActivityType.Watching }],
+    activities: [{ name: '@unheardlust', type: ActivityType.Watching }],
     status: 'idle',
   });
 
   startSniperLoop(client);
   startReminderLoop(client);
   startGiveawayLoop(client);
-
-  setInterval(() => {
-    client.user.setPresence({
-      activities: [{ name: `/help | ${client.guilds.cache.size} servers`, type: ActivityType.Watching }],
-      status: 'online',
-    });
-  }, 60000);
 }
