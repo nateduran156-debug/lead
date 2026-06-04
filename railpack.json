@@ -1,6 +1,9 @@
 {
   "$schema": "https://schema.railpack.com",
   "provider": "node",
+  "build": {
+    "buildCommand": "echo 'no build needed'"
+  },
   "deploy": {
     "startCommand": "node src/index.js"
   }
