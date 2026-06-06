@@ -135,6 +135,31 @@ function setPrefix(guildId, prefix) {
   db.prepare('INSERT OR REPLACE INTO prefix_settings (guild_id, prefix) VALUES (?, ?)').run(guildId, prefix);
 }
 
+function getGuild(guildId) {
+  const rows = db.prepare('SELECT key, value FROM guild_config WHERE guild_id = ?').all(guildId);
+  const config = { guild_id: guildId };
+  for (const row of rows) {
+    try { config[row.key] = JSON.parse(row.value); }
+    catch { config[row.key] = row.value; }
+  }
+  return config;
+}
+
+function setGuild(guildId, key, value) {
+  const stored = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  db.prepare('INSERT OR REPLACE INTO guild_config (guild_id, key, value) VALUES (?, ?, ?)').run(guildId, key, stored);
+}
+
+function getGuildValue(guildId, key, fallback = null) {
+  const row = db.prepare('SELECT value FROM guild_config WHERE guild_id = ? AND key = ?').get(guildId, key);
+  if (!row) return fallback;
+  try { return JSON.parse(row.value); }
+  catch { return row.value; }
+}
+
 module.exports = db;
-module.exports.getPrefix = getPrefix;
-module.exports.setPrefix = setPrefix;
+module.exports.getPrefix    = getPrefix;
+module.exports.setPrefix    = setPrefix;
+module.exports.getGuild     = getGuild;
+module.exports.setGuild     = setGuild;
+module.exports.getGuildValue = getGuildValue;
