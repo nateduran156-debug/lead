@@ -1,0 +1,9 @@
+{
+  "provider": "node",
+  "install": {
+    "cmd": "npm install"
+  },
+  "deploy": {
+    "cmd": "node src/index.js"
+  }
+}
