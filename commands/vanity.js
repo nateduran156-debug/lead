@@ -51,9 +51,7 @@ module.exports = {
 
   async execute(interaction) {
     if (!isWhitelisted(interaction.member, 'vanity') && !isWhitelisted(interaction.member)) {
-      return interaction.reply(C.cv2Reply([
-        C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)
-      ], true));
+      return interaction.reply(C.err('You are not whitelisted to use this command.'));
     }
     const sub = interaction.options.getSubcommand();
     await runVanity(sub, interaction.guild, interaction.user.id, {
@@ -65,11 +63,17 @@ module.exports = {
 
   async prefixExecute(message, args) {
     if (!isWhitelisted(message.member, 'vanity') && !isWhitelisted(message.member)) {
-      return C.prefixSend(message, [C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)]);
+      return C.prefixErr(message, 'You are not whitelisted to use this command.');
     }
     const sub = (args[0] ?? '').toLowerCase();
     if (!sub) {
-      return C.prefixSend(message, [C.container([C.textDisplay('Usage: `!vanity <add|remove|list|setchannel|pingrole|toggle> [args]`')], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'vanity',
+        description: 'Manage opp vanity watching.',
+        syntax: `.vanity <add|remove|list|setchannel|pingrole|toggle>`,
+        example: `.vanity add discord.gg/example`,
+        aliases: ['v'],
+      }));
     }
 
     const channelMention = args[1] ? message.guild.channels.cache.get(args[1].replace(/[<#>]/g, '')) : null;
@@ -79,53 +83,54 @@ module.exports = {
       vanity:  args[1] ?? null,
       channel: channelMention,
       role:    roleMention,
-    }, (payload) => C.prefixSend(message, payload.components, payload.flags));
+    }, (payload) => C.prefixSend(message, payload.components));
   }
 };
 
 async function runVanity(sub, guild, userId, opts, reply) {
   const guildId = guild.id;
 
-  const send = (components, color) =>
-    reply(C.cv2Reply([C.container(components, color)]));
-
   if (sub === 'add') {
-    if (!opts.vanity) return send([C.textDisplay('Provide a vanity to add.')], 0xED4245);
+    if (!opts.vanity) return reply(C.err('Provide a vanity to add.'));
     const vanity = opts.vanity.toLowerCase().replace(/discord\.gg\//g, '').replace(/\//g, '');
     try {
       db.prepare('INSERT INTO opp_vanities (vanity, guild_id, added_by) VALUES (?, ?, ?)').run(vanity, guildId, userId);
-      return send([C.textDisplay(`**Opp Vanity Registered**\n\n\`discord.gg/${vanity}\` added to the watch list.`)], 0x57F287);
+      return reply(C.ok(`**Opp Vanity Registered**\n\n\`discord.gg/${vanity}\` added to the watch list.`));
     } catch {
-      return send([C.textDisplay(`\`discord.gg/${vanity}\` is already on the watch list.`)], 0xED4245);
+      return reply(C.err(`\`discord.gg/${vanity}\` is already on the watch list.`));
     }
   }
 
   if (sub === 'remove') {
-    if (!opts.vanity) return send([C.textDisplay('Provide a vanity to remove.')], 0xED4245);
+    if (!opts.vanity) return reply(C.err('Provide a vanity to remove.'));
     const vanity = opts.vanity.toLowerCase().replace(/discord\.gg\//g, '').replace(/\//g, '');
     const res = db.prepare('DELETE FROM opp_vanities WHERE vanity = ? AND guild_id = ?').run(vanity, guildId);
-    if (res.changes === 0) return send([C.textDisplay(`\`discord.gg/${vanity}\` was not found in the watch list.`)], 0xED4245);
-    return send([C.textDisplay(`\`discord.gg/${vanity}\` removed from the watch list.`)], 0x57F287);
+    if (res.changes === 0) return reply(C.err(`\`discord.gg/${vanity}\` was not found in the watch list.`));
+    return reply(C.ok(`\`discord.gg/${vanity}\` removed from the watch list.`));
   }
 
   if (sub === 'list') {
     const rows = db.prepare('SELECT * FROM opp_vanities WHERE guild_id = ? ORDER BY added_at DESC').all(guildId);
-    if (rows.length === 0) return send([C.textDisplay('No opp vanities registered.')], 0xFEE75C);
+    if (rows.length === 0) return reply(C.warn('No opp vanities registered.'));
     const list = rows.map((r, i) => `${i + 1}. \`discord.gg/${r.vanity}\``).join('\n');
-    return send([C.textDisplay(`**Opp Vanity Watch List** — ${rows.length} registered\n\n${list}`)], 0x5865F2);
+    return reply(C.card({
+      title: `Opp Vanity Watch List — ${rows.length} registered`,
+      desc: list,
+      color: C.COLORS.info,
+    }));
   }
 
   if (sub === 'setchannel') {
-    if (!opts.channel) return send([C.textDisplay('Provide a channel.')], 0xED4245);
+    if (!opts.channel) return reply(C.err('Provide a channel.'));
     db.prepare('INSERT OR REPLACE INTO vanity_settings (guild_id, channel_id) VALUES (?, ?)').run(guildId, opts.channel.id);
-    return send([C.textDisplay(`Vanity notifications will be sent to <#${opts.channel.id}>.`)], 0x57F287);
+    return reply(C.ok(`Vanity notifications will be sent to <#${opts.channel.id}>.`));
   }
 
   if (sub === 'pingrole') {
-    if (!opts.role) return send([C.textDisplay('Provide a role.')], 0xED4245);
+    if (!opts.role) return reply(C.err('Provide a role.'));
     db.prepare(`INSERT INTO vanity_settings (guild_id, ping_role_id) VALUES (?, ?)
       ON CONFLICT(guild_id) DO UPDATE SET ping_role_id = excluded.ping_role_id`).run(guildId, opts.role.id);
-    return send([C.textDisplay(`<@&${opts.role.id}> will be pinged on vanity alerts.`)], 0x57F287);
+    return reply(C.ok(`<@&${opts.role.id}> will be pinged on vanity alerts.`));
   }
 
   if (sub === 'toggle') {
@@ -133,8 +138,11 @@ async function runVanity(sub, guild, userId, opts, reply) {
     const next = current ? (current.ping_enabled ? 0 : 1) : 0;
     db.prepare(`INSERT INTO vanity_settings (guild_id, ping_enabled) VALUES (?, ?)
       ON CONFLICT(guild_id) DO UPDATE SET ping_enabled = excluded.ping_enabled`).run(guildId, next);
-    return send([C.textDisplay(`Vanity pings are now **${next ? 'enabled' : 'disabled'}**.`)], next ? 0x57F287 : 0xED4245);
+    return reply(next
+      ? C.ok('Vanity pings are now **enabled**.')
+      : C.err('Vanity pings are now **disabled**.', false)
+    );
   }
 
-  return send([C.textDisplay('Unknown subcommand. Use `add`, `remove`, `list`, `setchannel`, `pingrole`, or `toggle`.')], 0xED4245);
+  return reply(C.err('Unknown subcommand. Use `add`, `remove`, `list`, `setchannel`, `pingrole`, or `toggle`.'));
 }

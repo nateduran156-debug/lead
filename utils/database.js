@@ -52,6 +52,7 @@ db.exec(`
     guild_id TEXT NOT NULL,
     added_by TEXT NOT NULL,
     last_game_id TEXT,
+    last_game_instance_id TEXT,
     UNIQUE(roblox_id, guild_id)
   );
 
@@ -141,6 +142,10 @@ db.exec(`
     UNIQUE(guild_id, word)
   );
 `);
+
+try {
+  db.exec('ALTER TABLE sniper_targets ADD COLUMN last_game_instance_id TEXT');
+} catch {}
 
 function getPrefix(guildId) {
   const row = db.prepare('SELECT prefix FROM prefix_settings WHERE guild_id = ?').get(guildId);

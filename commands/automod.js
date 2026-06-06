@@ -80,16 +80,22 @@ module.exports = {
       return C.prefixErr(message, 'You do not have permission to use this command.');
     }
     const sub = (args[0] ?? '').toLowerCase();
-    if (!sub) return C.prefixSend(message, [C.container([C.textDisplay(
-      'Usage: `!automod <enable|disable|list|addword|removeword|invites|mentions|action> [value]`'
-    )], C.COLORS.warning)]);
+    if (!sub) {
+      return message.reply(C.commandCard({
+        name: 'automod',
+        description: 'Configure automatic moderation for this server.',
+        syntax: `.automod <enable|disable|list|addword|removeword|invites|mentions|action>`,
+        example: `.automod addword badword`,
+        aliases: ['am'],
+      }));
+    }
 
     await runAutomod(sub, message.guild, {
       word:       args[1] ? args.slice(1).join(' ') : null,
       toggle:     args[1]?.toLowerCase(),
       threshold:  parseInt(args[1]) || null,
       actionType: args[1]?.toLowerCase(),
-    }, (payload) => C.prefixSend(message, payload.components, payload.flags));
+    }, (payload) => C.prefixSend(message, payload.components));
   }
 };
 
@@ -103,23 +109,26 @@ async function runAutomod(sub, guild, opts, reply) {
 
   if (sub === 'disable') {
     upsert(guildId, 'enabled', 0);
-    return reply(C.ok('Automod is now **disabled**.'));
+    return reply(C.err('Automod is now **disabled**.', false));
   }
 
   if (sub === 'list') {
     const s = getSettings(guildId);
     const words = db.prepare('SELECT word FROM automod_words WHERE guild_id = ? ORDER BY word').all(guildId);
-    return reply(C.cv2Reply([C.container([
-      C.textDisplay(
-        `**Automod Settings**\n\n` +
-        `Status: **${s.enabled ? 'Enabled' : 'Disabled'}**\n` +
-        `Invite Filter: **${s.check_invites ? 'On' : 'Off'}**\n` +
-        `Mass Mentions: **${s.check_mentions ? `On (threshold: ${s.mention_threshold})` : 'Off'}**\n` +
-        `Action: **${s.action}**\n\n` +
-        `**Banned Words** (${words.length}):\n` +
-        (words.length ? words.map(w => `\`${w.word}\``).join(', ') : 'None')
-      )
-    ], C.COLORS.info)]));
+    return reply(C.card({
+      title: 'Automod Settings',
+      fields: [
+        { name: 'Status',        value: s.enabled ? 'Enabled' : 'Disabled' },
+        { name: 'Invite Filter', value: s.check_invites ? 'On' : 'Off' },
+        { name: 'Mass Mentions', value: s.check_mentions ? `On (threshold: ${s.mention_threshold})` : 'Off' },
+        { name: 'Action',        value: s.action },
+        {
+          name: `Banned Words (${words.length})`,
+          value: words.length ? words.map(w => `\`${w.word}\``).join(', ') : 'None',
+        },
+      ],
+      color: C.COLORS.info,
+    }));
   }
 
   if (sub === 'addword') {

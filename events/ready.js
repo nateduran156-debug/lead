@@ -1,4 +1,3 @@
-const { ActivityType } = require('discord.js');
 const logger = require('../utils/logger');
 
 module.exports = {
@@ -11,10 +10,5 @@ module.exports = {
     logger.info(`  Guilds:     ${client.guilds.cache.size}`);
     logger.info(`  Commands:   ${client.commands.size} slash, ${client.prefixCommands.size} prefix`);
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-    client.user.setPresence({
-      activities: [{ name: 'the server', type: ActivityType.Watching }],
-      status: 'online',
-    });
   }
 };

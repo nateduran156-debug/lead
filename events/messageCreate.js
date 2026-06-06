@@ -24,9 +24,7 @@ module.exports = {
       await command.prefixExecute(message, args, client);
     } catch (err) {
       logger.error(`Prefix command "${name}" error:`, err.message);
-      await C.prefixSend(message, [
-        C.container([C.textDisplay('An error occurred while running that command.')], 0xED4245)
-      ]).catch(() => {});
+      await message.reply(C.err('An error occurred while running that command.', false)).catch(() => {});
     }
   }
 };

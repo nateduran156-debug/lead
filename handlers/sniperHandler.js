@@ -33,15 +33,24 @@ async function checkTargets(client) {
     }
 
     for (const presence of presences) {
-      if (presence.userPresenceType !== 2) continue;
-
       const target = guildTargets.find(t => String(t.roblox_id) === String(presence.userId));
       if (!target) continue;
 
-      if (String(target.last_game_id) === String(presence.placeId)) continue;
+      if (presence.userPresenceType !== 2) {
+        if (target.last_game_id !== null) {
+          db.prepare('UPDATE sniper_targets SET last_game_id = NULL, last_game_instance_id = NULL WHERE roblox_id = ? AND guild_id = ?')
+            .run(target.roblox_id, guildId);
+        }
+        continue;
+      }
 
-      db.prepare('UPDATE sniper_targets SET last_game_id = ? WHERE roblox_id = ? AND guild_id = ?')
-        .run(String(presence.placeId), target.roblox_id, guildId);
+      const samePlace    = String(target.last_game_id) === String(presence.placeId);
+      const sameInstance = String(target.last_game_instance_id) === String(presence.gameId);
+
+      if (samePlace && sameInstance) continue;
+
+      db.prepare('UPDATE sniper_targets SET last_game_id = ?, last_game_instance_id = ? WHERE roblox_id = ? AND guild_id = ?')
+        .run(String(presence.placeId), String(presence.gameId ?? ''), target.roblox_id, guildId);
 
       let gameName = presence.lastLocation ?? 'Unknown Game';
       try {
@@ -54,22 +63,28 @@ async function checkTargets(client) {
         avatarUrl = await roblox.getUserAvatar(target.roblox_id);
       } catch {}
 
+      const label = target.roblox_username ?? target.roblox_id;
+      const bodyText =
+        `**${label}** is now in a game\n\n` +
+        `Game: **${gameName}**\n` +
+        `Roblox ID: \`${target.roblox_id}\`` +
+        (target.discord_user_id ? `\nDiscord: <@${target.discord_user_id}>` : '');
+
+      const innerComponents = avatarUrl
+        ? [C.section([C.textDisplay(bodyText)], C.thumbnail(avatarUrl))]
+        : [C.textDisplay(bodyText)];
+
       const components = [
         C.container(
           [
-            ...(avatarUrl ? [C.section(
-              [C.textDisplay(`**${target.roblox_username ?? target.roblox_id}** is now in a game\n\nGame: **${gameName}**\nRoblox ID: \`${target.roblox_id}\`${target.discord_user_id ? `\nDiscord: <@${target.discord_user_id}>` : ''}`)],
-              C.thumbnail(avatarUrl)
-            )] : [
-              C.textDisplay(`**${target.roblox_username ?? target.roblox_id}** is now in a game\n\nGame: **${gameName}**\nRoblox ID: \`${target.roblox_id}\`${target.discord_user_id ? `\nDiscord: <@${target.discord_user_id}>` : ''}`)
-            ]),
+            ...innerComponents,
             C.separator(),
             C.actionRow([
               C.linkButton('Join Server', target.server_link),
               C.primaryButton('Copy Roblox ID', `copy_roblox_id:${target.roblox_id}`),
             ]),
           ],
-          0xED4245
+          C.COLORS.error
         ),
       ];
 

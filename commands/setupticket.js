@@ -8,14 +8,14 @@ const PANEL_TYPES = {
     description: 'Click the button below to open a verification ticket.\n\nYou will be guided through linking your Roblox account.',
     buttonLabel: 'Open Verification Ticket',
     buttonId: 'ticket_open_verification',
-    color: 0x5865F2,
+    color: C.COLORS.info,
   },
   tag: {
     title: 'Tag Request',
     description: 'Click the button below to open a tag request ticket.\n\nStaff will assist you with obtaining a Roblox group tag.',
     buttonLabel: 'Open Tag Request',
     buttonId: 'ticket_open_tag',
-    color: 0x5865F2,
+    color: C.COLORS.info,
   },
 };
 
@@ -48,19 +48,23 @@ module.exports = {
     const category    = interaction.options.getChannel('category');
     await interaction.deferReply({ ephemeral: true });
     await sendPanel(interaction.channel, interaction.guild.id, type, logChannel?.id, category?.id);
-    return interaction.editReply(C.cv2Reply([
-      C.container([C.textDisplay(`Ticket panel created.${logChannel ? ` Logs → <#${logChannel.id}>` : ''}`)], 0x57F287)
-    ]));
+    return interaction.editReply(C.ok(`Ticket panel created.${logChannel ? ` Logs → <#${logChannel.id}>` : ''}`));
   },
 
   async prefixExecute(message, args) {
     const type = (args[0] ?? '').toLowerCase();
     if (!['verification', 'tag'].includes(type)) {
-      return C.prefixSend(message, [C.container([C.textDisplay('Usage: `!setupticket <verification|tag> [#log_channel]`')], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'setupticket',
+        description: 'Set up a ticket panel in this channel.',
+        syntax: `.setupticket <verification|tag> [#log_channel]`,
+        example: `.setupticket verification #ticket-logs`,
+        aliases: ['sticket', 'st'],
+      }));
     }
     const logCh = args[1] ? message.guild.channels.cache.get(args[1].replace(/[<#>]/g, '')) : null;
     await sendPanel(message.channel, message.guild.id, type, logCh?.id, null);
-    return C.prefixSend(message, [C.container([C.textDisplay(`Ticket panel created.${logCh ? ` Logs → <#${logCh.id}>` : ''}`)], 0x57F287)]);
+    return C.prefixOk(message, `Ticket panel created.${logCh ? ` Logs → <#${logCh.id}>` : ''}`);
   }
 };
 

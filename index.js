@@ -15,7 +15,13 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
   ],
-  partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
+  partials: [
+    Partials.Channel,
+    Partials.Message,
+    Partials.GuildMember,
+    Partials.Presence,
+    Partials.User,
+  ],
 });
 
 client.commands = new Collection();

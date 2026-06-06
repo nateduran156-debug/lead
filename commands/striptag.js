@@ -20,25 +20,29 @@ module.exports = {
 
   async execute(interaction) {
     if (!isWhitelisted(interaction.member, 'tags') && !isWhitelisted(interaction.member)) {
-      return interaction.reply(C.cv2Reply([
-        C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)
-      ], true));
+      return interaction.reply(C.err('You are not whitelisted to use this command.'));
     }
     await interaction.deferReply({ ephemeral: true });
     await runStripTag(interaction.guild, interaction.options.getString('target').trim(),
-      (components) => interaction.editReply({ flags: C.CV2_FLAG, components })
+      (payload) => interaction.editReply(payload)
     );
   },
 
   async prefixExecute(message, args) {
     if (!isWhitelisted(message.member, 'tags') && !isWhitelisted(message.member)) {
-      return C.prefixSend(message, [C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)]);
+      return C.prefixErr(message, 'You are not whitelisted to use this command.');
     }
     if (!args[0]) {
-      return C.prefixSend(message, [C.container([C.textDisplay('Usage: `!striptag <roblox_user | @user | everyone>`')], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'striptag',
+        description: 'Remove Roblox group tags from a user or every tagged user in the server.',
+        syntax: `.striptag <roblox_user | @user | everyone>`,
+        example: `.striptag builderman`,
+        aliases: ['strip'],
+      }));
     }
     await runStripTag(message.guild, args[0],
-      (components) => C.prefixSend(message, components)
+      (payload) => C.prefixSend(message, payload.components)
     );
   }
 };
@@ -64,7 +68,7 @@ async function runStripTag(guild, target, reply) {
   if (target.toLowerCase() === 'everyone') {
     const tagged = db.prepare('SELECT DISTINCT roblox_id, roblox_username FROM roblox_tags WHERE guild_id = ?').all(guildId);
     if (tagged.length === 0) {
-      return reply([C.container([C.textDisplay('No tagged users found in this server.')], 0xFEE75C)]);
+      return reply(C.warn('No tagged users found in this server.'));
     }
     let totalStripped = 0, totalFailed = 0;
     for (const u of tagged) {
@@ -72,10 +76,10 @@ async function runStripTag(guild, target, reply) {
       totalStripped += stripped; totalFailed += failed;
     }
     db.prepare('DELETE FROM roblox_tags WHERE guild_id = ?').run(guildId);
-    return reply([C.container([C.textDisplay(
+    return reply(C.ok(
       `**Tags Stripped**\n\nProcessed ${tagged.length} user(s). ${totalStripped} groups updated.` +
       (totalFailed > 0 ? ` ${totalFailed} failed — check bot group permissions.` : '')
-    )], 0x57F287)]);
+    ));
   }
 
   let robloxUser;
@@ -96,14 +100,14 @@ async function runStripTag(guild, target, reply) {
       robloxUser = await roblox.getUserById(found.id);
     }
   } catch {
-    return reply([C.container([C.textDisplay(`Could not resolve \`${target}\` to a Roblox user.`)], 0xED4245)]);
+    return reply(C.err(`Could not resolve \`${target}\` to a Roblox user.`));
   }
 
   const { stripped, failed } = await stripOneUser(String(robloxUser.id), robloxUser.name);
   db.prepare('DELETE FROM roblox_tags WHERE roblox_id = ? AND guild_id = ?').run(String(robloxUser.id), guildId);
 
-  return reply([C.container([C.textDisplay(
+  return reply(C.ok(
     `**Tags Stripped**\n\n**${robloxUser.name}** (\`${robloxUser.id}\`) — ${stripped} group(s) updated.` +
     (failed > 0 ? ` ${failed} failed — check bot group permissions.` : '')
-  )], 0x57F287)]);
+  ));
 }

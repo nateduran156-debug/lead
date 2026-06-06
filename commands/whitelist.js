@@ -63,7 +63,13 @@ module.exports = {
   async prefixExecute(message, args) {
     const sub = (args[0] ?? '').toLowerCase();
     if (!sub) {
-      return C.prefixSend(message, [C.container([C.textDisplay('Usage: `!whitelist <add|remove|role|removerole|list> [user/role] [category]`')], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'whitelist',
+        description: 'Manage the bot whitelist. Controls who can use each category of commands.',
+        syntax: `.whitelist <add|remove|role|removerole|list> [user/role] [category]`,
+        example: `.whitelist add @user sniper`,
+        aliases: ['wl'],
+      }));
     }
 
     const mentionRaw = args[1] ?? '';
@@ -80,42 +86,41 @@ module.exports = {
       roleId:   resolvedRole?.id ?? null,
       roleName: resolvedRole?.name ?? mentionId,
       category: validCat,
-    }, (payload) => C.prefixSend(message, payload.components, payload.flags));
+    }, (payload) => C.prefixSend(message, payload.components));
   }
 };
 
 async function runWhitelist(sub, guild, actorId, opts, reply) {
   const guildId = guild.id;
-  const send = (components, color) => reply(C.cv2Reply([C.container(components, color)]));
 
   if (sub === 'add') {
-    if (!opts.userId) return send([C.textDisplay('Mention a user or provide their ID.')], 0xED4245);
+    if (!opts.userId) return reply(C.err('Mention a user or provide their ID.'));
     wl.addUserWhitelist(opts.userId, guildId, actorId, opts.category);
-    return send([C.textDisplay(`**Whitelist Updated**\n\n<@${opts.userId}> whitelisted for **${opts.category === 'all' ? 'the entire bot' : opts.category}**.`)], 0x57F287);
+    return reply(C.ok(`**Whitelist Updated**\n\n<@${opts.userId}> whitelisted for **${opts.category === 'all' ? 'the entire bot' : opts.category}**.`));
   }
 
   if (sub === 'remove') {
-    if (!opts.userId) return send([C.textDisplay('Mention a user or provide their ID.')], 0xED4245);
+    if (!opts.userId) return reply(C.err('Mention a user or provide their ID.'));
     wl.removeUserWhitelist(opts.userId, guildId, opts.category);
-    return send([C.textDisplay(`<@${opts.userId}> removed from the whitelist.`)], 0x57F287);
+    return reply(C.ok(`<@${opts.userId}> removed from the whitelist.`));
   }
 
   if (sub === 'role') {
-    if (!opts.roleId) return send([C.textDisplay('Mention a role or provide its ID.')], 0xED4245);
+    if (!opts.roleId) return reply(C.err('Mention a role or provide its ID.'));
     wl.addRoleWhitelist(opts.roleId, guildId, actorId, opts.category);
-    return send([C.textDisplay(`**Whitelist Updated**\n\n<@&${opts.roleId}> whitelisted for **${opts.category === 'all' ? 'the entire bot' : opts.category}**.`)], 0x57F287);
+    return reply(C.ok(`**Whitelist Updated**\n\n<@&${opts.roleId}> whitelisted for **${opts.category === 'all' ? 'the entire bot' : opts.category}**.`));
   }
 
   if (sub === 'removerole') {
-    if (!opts.roleId) return send([C.textDisplay('Mention a role or provide its ID.')], 0xED4245);
+    if (!opts.roleId) return reply(C.err('Mention a role or provide its ID.'));
     wl.removeRoleWhitelist(opts.roleId, guildId, opts.category);
-    return send([C.textDisplay(`<@&${opts.roleId}> removed from the whitelist.`)], 0x57F287);
+    return reply(C.ok(`<@&${opts.roleId}> removed from the whitelist.`));
   }
 
   if (sub === 'list') {
     const { users, roles } = wl.listWhitelisted(guildId);
     if (users.length === 0 && roles.length === 0) {
-      return send([C.textDisplay('The whitelist is empty.')], 0xFEE75C);
+      return reply(C.warn('The whitelist is empty.'));
     }
     const grouped = {};
     for (const cat of CATEGORIES) {
@@ -129,9 +134,13 @@ async function runWhitelist(sub, guild, actorId, opts, reply) {
       for (const u of data.users) lines.push(`  <@${u.user_id}>`);
       for (const r of data.roles) lines.push(`  <@&${r.role_id}>`);
     }
-    lines.push(`\n*Owner bypass: <@${OWNER_ID}> (always)*`);
-    return send([C.textDisplay(`**Whitelist**\n\n${lines.join('\n')}`)], 0x5865F2);
+    lines.push(`\n-# Owner bypass: <@${OWNER_ID}> (always)`);
+    return reply(C.card({
+      title: 'Whitelist',
+      desc: lines.join('\n'),
+      color: C.COLORS.info,
+    }));
   }
 
-  return send([C.textDisplay('Unknown subcommand.')], 0xED4245);
+  return reply(C.err('Unknown subcommand.'));
 }

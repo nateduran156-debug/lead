@@ -13,7 +13,7 @@ module.exports = {
       sub.setName('add')
         .setDescription('Track a Roblox user — alerts when they join a game')
         .addStringOption(opt =>
-          opt.setName('roblox_id').setDescription('Roblox user ID').setRequired(true)
+          opt.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true)
         )
         .addStringOption(opt =>
           opt.setName('server_link').setDescription('Discord server link to display on alert').setRequired(true)
@@ -26,7 +26,7 @@ module.exports = {
       sub.setName('remove')
         .setDescription('Stop tracking a Roblox user')
         .addStringOption(opt =>
-          opt.setName('roblox_id').setDescription('Roblox user ID').setRequired(true)
+          opt.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true)
         )
     )
     .addSubcommand(sub =>
@@ -42,35 +42,39 @@ module.exports = {
     ),
 
   prefix: { name: 'sniper', aliases: ['s'] },
-  usage: 'sniper <add|remove|list|setchannel> [args]\n  add: sniper add <roblox_id> <server_link> [@discord_user]\n  remove: sniper remove <roblox_id>\n  setchannel: sniper setchannel <#channel>',
+  usage: 'sniper <add|remove|list|setchannel> [args]',
   category: 'sniper',
 
   async execute(interaction) {
     if (!isWhitelisted(interaction.member, 'sniper') && !isWhitelisted(interaction.member)) {
-      return interaction.reply(C.cv2Reply([
-        C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)
-      ], true));
+      return interaction.reply(C.err('You are not whitelisted to use this command.'));
     }
     const sub = interaction.options.getSubcommand();
     await interaction.deferReply({ ephemeral: true });
 
     const discordUser = interaction.options.getUser('discord_user');
     await runSniper(sub, interaction.guild, interaction.user.id, {
-      robloxId:   interaction.options.getString('roblox_id')?.trim(),
-      serverLink: interaction.options.getString('server_link')?.trim(),
-      channel:    interaction.options.getChannel('channel'),
-      discordUserId: discordUser?.id ?? null,
+      robloxInput: interaction.options.getString('roblox_user')?.trim(),
+      serverLink:  interaction.options.getString('server_link')?.trim(),
+      channel:     interaction.options.getChannel('channel'),
+      discordUserId:  discordUser?.id ?? null,
       discordUserTag: discordUser?.tag ?? null,
-    }, (components) => interaction.editReply({ flags: C.CV2_FLAG, components }));
+    }, (payload) => interaction.editReply(payload));
   },
 
   async prefixExecute(message, args) {
     if (!isWhitelisted(message.member, 'sniper') && !isWhitelisted(message.member)) {
-      return C.prefixSend(message, [C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)]);
+      return C.prefixErr(message, 'You are not whitelisted to use this command.');
     }
     const sub = (args[0] ?? '').toLowerCase();
     if (!sub) {
-      return C.prefixSend(message, [C.container([C.textDisplay('Usage: `!sniper <add|remove|list|setchannel> [args]`')], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'sniper',
+        description: 'Track Roblox users and get alerted when they join a game.',
+        syntax: `.sniper <add|remove|list|setchannel>`,
+        example: `.sniper add builderman https://discord.gg/example`,
+        aliases: ['s'],
+      }));
     }
 
     const channelMention = args[1] ? message.guild.channels.cache.get(args[1].replace(/[<#>]/g, '')) : null;
@@ -78,63 +82,86 @@ module.exports = {
     const discordMember  = discordMention ? message.guild.members.cache.get(discordMention) : null;
 
     await runSniper(sub, message.guild, message.author.id, {
-      robloxId:      args[1] ?? null,
+      robloxInput:   args[1] ?? null,
       serverLink:    args[2] ?? null,
       channel:       channelMention,
       discordUserId: discordMember?.id ?? null,
       discordUserTag: discordMember?.user?.tag ?? null,
-    }, (components) => C.prefixSend(message, components));
+    }, (payload) => C.prefixSend(message, payload.components));
   }
 };
+
+async function resolveRobloxUser(input) {
+  if (!input) return null;
+  if (/^\d+$/.test(input)) {
+    return roblox.getUserById(input);
+  }
+  const found = await roblox.getUserByUsername(input);
+  if (!found) throw new Error(`Roblox user \`${input}\` not found.`);
+  return roblox.getUserById(found.id);
+}
 
 async function runSniper(sub, guild, userId, opts, reply) {
   const guildId = guild.id;
 
-  const send = (components, color) => reply([C.container(components, color)]);
-
   if (sub === 'add') {
-    if (!opts.robloxId) return send([C.textDisplay('Provide a Roblox user ID.')], 0xED4245);
-    if (!opts.serverLink) return send([C.textDisplay('Provide a Discord server link.')], 0xED4245);
-    if (!/^\d+$/.test(opts.robloxId)) return send([C.textDisplay('Invalid Roblox user ID — must be numeric.')], 0xED4245);
+    if (!opts.robloxInput) return reply(C.err('Provide a Roblox username or user ID.'));
+    if (!opts.serverLink)  return reply(C.err('Provide a Discord server link.'));
 
     let user;
     try {
-      user = await roblox.getUserById(opts.robloxId);
-    } catch {
-      return send([C.textDisplay(`Could not find Roblox user \`${opts.robloxId}\`. Verify the ID is correct.`)], 0xED4245);
+      user = await resolveRobloxUser(opts.robloxInput);
+    } catch (e) {
+      return reply(C.err(e.message ?? `Could not find Roblox user \`${opts.robloxInput}\`.`));
     }
 
     db.prepare(`INSERT OR REPLACE INTO sniper_targets
       (roblox_id, roblox_username, discord_user_id, server_link, guild_id, added_by)
-      VALUES (?, ?, ?, ?, ?, ?)`).run(opts.robloxId, user.name, opts.discordUserId, opts.serverLink, guildId, userId);
+      VALUES (?, ?, ?, ?, ?, ?)`).run(String(user.id), user.name, opts.discordUserId, opts.serverLink, guildId, userId);
 
-    return send([C.textDisplay(
-      `**Target Added**\n\nRoblox User: **${user.name}** (\`${opts.robloxId}\`)\nServer Link: ${opts.serverLink}` +
+    return reply(C.ok(
+      `**Target Added**\n\nRoblox User: **${user.name}** (\`${user.id}\`)\nServer Link: ${opts.serverLink}` +
       (opts.discordUserId ? `\nLinked Discord: <@${opts.discordUserId}>` : '')
-    )], 0x57F287);
+    ));
   }
 
   if (sub === 'remove') {
-    if (!opts.robloxId) return send([C.textDisplay('Provide a Roblox user ID.')], 0xED4245);
-    const res = db.prepare('DELETE FROM sniper_targets WHERE roblox_id = ? AND guild_id = ?').run(opts.robloxId, guildId);
-    if (res.changes === 0) return send([C.textDisplay(`Roblox ID \`${opts.robloxId}\` is not being tracked.`)], 0xED4245);
-    return send([C.textDisplay(`Roblox ID \`${opts.robloxId}\` removed from tracking.`)], 0x57F287);
+    if (!opts.robloxInput) return reply(C.err('Provide a Roblox username or user ID.'));
+
+    let robloxId = opts.robloxInput;
+    if (!/^\d+$/.test(robloxId)) {
+      try {
+        const found = await roblox.getUserByUsername(robloxId);
+        if (!found) throw new Error('not found');
+        robloxId = String(found.id);
+      } catch {
+        return reply(C.err(`Roblox user \`${opts.robloxInput}\` not found.`));
+      }
+    }
+
+    const res = db.prepare('DELETE FROM sniper_targets WHERE roblox_id = ? AND guild_id = ?').run(robloxId, guildId);
+    if (res.changes === 0) return reply(C.err(`\`${opts.robloxInput}\` is not being tracked.`));
+    return reply(C.ok(`\`${opts.robloxInput}\` removed from tracking.`));
   }
 
   if (sub === 'list') {
     const targets = db.prepare('SELECT * FROM sniper_targets WHERE guild_id = ? ORDER BY id DESC').all(guildId);
-    if (targets.length === 0) return send([C.textDisplay('No Roblox users are currently being tracked.')], 0xFEE75C);
+    if (targets.length === 0) return reply(C.warn('No Roblox users are currently being tracked.'));
     const lines = targets.map((t, i) =>
       `${i + 1}. **${t.roblox_username ?? 'Unknown'}** — ID: \`${t.roblox_id}\`${t.discord_user_id ? ` | <@${t.discord_user_id}>` : ''}`
     ).join('\n');
-    return send([C.textDisplay(`**Tracked Roblox Users** — ${targets.length} total\n\n${lines}`)], 0x5865F2);
+    return reply(C.card({
+      title: `Tracked Roblox Users — ${targets.length} total`,
+      desc: lines,
+      color: C.COLORS.info,
+    }));
   }
 
   if (sub === 'setchannel') {
-    if (!opts.channel) return send([C.textDisplay('Provide a channel.')], 0xED4245);
+    if (!opts.channel) return reply(C.err('Provide a channel.'));
     db.prepare('INSERT OR REPLACE INTO sniper_settings (guild_id, channel_id) VALUES (?, ?)').run(guildId, opts.channel.id);
-    return send([C.textDisplay(`Sniper alerts will be sent to <#${opts.channel.id}>.`)], 0x57F287);
+    return reply(C.ok(`Sniper alerts will be sent to <#${opts.channel.id}>.`));
   }
 
-  return send([C.textDisplay('Unknown subcommand. Use `add`, `remove`, `list`, or `setchannel`.')], 0xED4245);
+  return reply(C.err('Unknown subcommand. Use `add`, `remove`, `list`, or `setchannel`.'));
 }

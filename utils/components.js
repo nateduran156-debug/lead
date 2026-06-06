@@ -92,20 +92,51 @@ function cv2Update(components) {
   return { flags: CV2_FLAG, components };
 }
 
-function card(components, accentColor = null) {
-  return container(components, accentColor);
-}
-
 function ok(text, ephemeral = false) {
-  return cv2Reply([container([textDisplay(text)], COLORS.success)], ephemeral);
+  return cv2Reply([container([textDisplay(`✅  ${text}`)], COLORS.success)], ephemeral);
 }
 
 function err(text, ephemeral = true) {
-  return cv2Reply([container([textDisplay(text)], COLORS.error)], ephemeral);
+  return cv2Reply([container([textDisplay(`❌  ${text}`)], COLORS.error)], ephemeral);
 }
 
 function warn(text, ephemeral = false) {
-  return cv2Reply([container([textDisplay(text)], COLORS.warning)], ephemeral);
+  return cv2Reply([container([textDisplay(`⚠️  ${text}`)], COLORS.warning)], ephemeral);
+}
+
+function loading(text = 'Loading…') {
+  return cv2Reply([container([textDisplay(`⏳  ${text}`)], COLORS.default)]);
+}
+
+function card({ title, desc, fields = [], color = COLORS.info, footer } = {}) {
+  const parts = [];
+  if (title) parts.push(textDisplay(`## ${title}`));
+  if (desc)  parts.push(textDisplay(desc));
+  if (fields.length) {
+    parts.push(separator());
+    for (const f of fields) {
+      parts.push(textDisplay(`**${f.name}**\n${f.value}`));
+    }
+  }
+  if (footer) {
+    parts.push(separator());
+    parts.push(textDisplay(`-# ${footer}`));
+  }
+  return cv2Reply([container(parts, color)]);
+}
+
+function commandCard({ name, description, syntax, example, aliases = [], color = COLORS.info } = {}) {
+  const lines = [];
+  if (syntax)         lines.push(`Syntax:   ${syntax}`);
+  if (example)        lines.push(`Example:  ${example}`);
+  if (aliases.length) lines.push(`Aliases:  ${aliases.join('  ')}`);
+
+  const parts = [textDisplay(`**${name}**\n\n${description}`)];
+  if (lines.length) {
+    parts.push(separator());
+    parts.push(textDisplay(`\`\`\`\n${lines.join('\n')}\`\`\``));
+  }
+  return cv2Reply([container(parts, color)]);
 }
 
 async function prefixSend(message, components) {
@@ -113,11 +144,11 @@ async function prefixSend(message, components) {
 }
 
 async function prefixOk(message, text) {
-  return prefixSend(message, [container([textDisplay(text)], COLORS.success)]);
+  return prefixSend(message, [container([textDisplay(`✅  ${text}`)], COLORS.success)]);
 }
 
 async function prefixErr(message, text) {
-  return prefixSend(message, [container([textDisplay(text)], COLORS.error)]);
+  return prefixSend(message, [container([textDisplay(`❌  ${text}`)], COLORS.error)]);
 }
 
 module.exports = {
@@ -125,9 +156,11 @@ module.exports = {
   COLORS,
   container,
   card,
+  commandCard,
   ok,
   err,
   warn,
+  loading,
   prefixOk,
   prefixErr,
   textDisplay,

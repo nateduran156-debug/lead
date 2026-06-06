@@ -16,7 +16,7 @@ module.exports = {
     .addStringOption(opt =>
       opt.setName('tag').setDescription('Tag to give').setRequired(true)
         .addChoices(
-          { name: '164 (Group: 948951510)',          value: '164' },
+          { name: '164 tag (Group: 948951510)',      value: '164 tag' },
           { name: 'KITTY TAG (Group: 575770529)',    value: 'KITTY TAG' },
           { name: 'lurk tag (Group: 575770529)',     value: 'lurk tag' },
           { name: 'AMOR TAG (Group: 575770529)',     value: 'AMOR TAG' },
@@ -25,14 +25,12 @@ module.exports = {
     ),
 
   prefix: { name: 'tag', aliases: [] },
-  usage: `tag <roblox_user> <tag>\n  Tags: 164 | KITTY TAG | lurk tag | AMOR TAG | YinYang`,
+  usage: `tag <roblox_user> <tag>`,
   category: 'tags',
 
   async execute(interaction) {
     if (!isWhitelisted(interaction.member, 'tags') && !isWhitelisted(interaction.member)) {
-      return interaction.reply(C.cv2Reply([
-        C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)
-      ], true));
+      return interaction.reply(C.err('You are not whitelisted to use this command.'));
     }
     await interaction.deferReply({ ephemeral: true });
     await runTag(
@@ -40,31 +38,33 @@ module.exports = {
       interaction.user.id,
       interaction.options.getString('roblox_user').trim(),
       interaction.options.getString('tag'),
-      (components) => interaction.editReply({ flags: C.CV2_FLAG, components })
+      (payload) => interaction.editReply(payload)
     );
   },
 
   async prefixExecute(message, args) {
     if (!isWhitelisted(message.member, 'tags') && !isWhitelisted(message.member)) {
-      return C.prefixSend(message, [C.container([C.textDisplay('You are not whitelisted to use this command.')], 0xED4245)]);
+      return C.prefixErr(message, 'You are not whitelisted to use this command.');
     }
     if (args.length < 2) {
-      return C.prefixSend(message, [C.container([C.textDisplay(
-        `Usage: \`!tag <roblox_user> <tag>\`\n\nAvailable tags:\n${ALL_TAG_NAMES.map(t => `\`${t}\``).join(', ')}`
-      )], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'tag',
+        description: `Give a Roblox group tag to a user.\n\nAvailable tags: ${ALL_TAG_NAMES.map(t => `\`${t}\``).join(', ')}`,
+        syntax: `.tag <roblox_user> <tag>`,
+        example: `.tag builderman KITTY TAG`,
+        aliases: [],
+      }));
     }
 
     const robloxInput = args[0];
     const tagName     = args.slice(1).join(' ');
 
     if (!ALL_TAG_NAMES.includes(tagName)) {
-      return C.prefixSend(message, [C.container([C.textDisplay(
-        `Invalid tag. Available tags:\n${ALL_TAG_NAMES.map(t => `\`${t}\``).join(', ')}`
-      )], 0xED4245)]);
+      return message.reply(C.err(`Invalid tag. Available tags: ${ALL_TAG_NAMES.map(t => `\`${t}\``).join(', ')}`));
     }
 
     await runTag(message.guild, message.author.id, robloxInput, tagName,
-      (components) => C.prefixSend(message, components)
+      (payload) => C.prefixSend(message, payload.components)
     );
   }
 };
@@ -80,7 +80,7 @@ async function runTag(guild, actorId, robloxInput, tagName, reply) {
       robloxUser = await roblox.getUserById(found.id);
     }
   } catch {
-    return reply([C.container([C.textDisplay(`Could not find Roblox user \`${robloxInput}\`. Check the username or ID.`)], 0xED4245)]);
+    return reply(C.err(`Could not find Roblox user \`${robloxInput}\`. Check the username or ID.`));
   }
 
   const groupId = GROUP_164_ROLES.includes(tagName) ? GROUP_164 : GROUP_TAGS;
@@ -89,25 +89,25 @@ async function runTag(guild, actorId, robloxInput, tagName, reply) {
   try {
     groupRoles = await roblox.getGroupRoles(groupId);
   } catch {
-    return reply([C.container([C.textDisplay('Failed to fetch group roles. Check bot cookie and group access.')], 0xED4245)]);
+    return reply(C.err('Failed to fetch group roles. Check bot cookie and group access.'));
   }
 
   const targetRole = groupRoles.find(r => r.name === tagName);
   if (!targetRole) {
-    return reply([C.container([C.textDisplay(`Role \`${tagName}\` not found in group \`${groupId}\`.`)], 0xED4245)]);
+    return reply(C.err(`Role \`${tagName}\` not found in group \`${groupId}\`.`));
   }
 
   try {
     await roblox.setGroupRank(groupId, robloxUser.id, targetRole.id);
   } catch (err) {
     const msg = err?.response?.data?.errors?.[0]?.message ?? err.message ?? 'Unknown error';
-    return reply([C.container([C.textDisplay(`Failed to apply tag: ${msg}`)], 0xED4245)]);
+    return reply(C.err(`Failed to apply tag: ${msg}`));
   }
 
   db.prepare(`INSERT INTO roblox_tags (discord_id, roblox_id, roblox_username, tag_name, group_id, guild_id, given_by)
     VALUES (?, ?, ?, ?, ?, ?, ?)`).run(actorId, String(robloxUser.id), robloxUser.name, tagName, groupId, guild.id, actorId);
 
-  return reply([C.container([C.textDisplay(
+  return reply(C.ok(
     `**Tag Applied**\n\nRoblox user **${robloxUser.name}** (\`${robloxUser.id}\`) has been given the **${tagName}** tag in group \`${groupId}\`.`
-  )], 0x57F287)]);
+  ));
 }

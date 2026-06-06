@@ -17,11 +17,10 @@ module.exports = {
     const existing = db.prepare('SELECT * FROM verifications WHERE discord_id = ? AND guild_id = ?')
       .get(interaction.user.id, interaction.guild.id);
     if (existing) {
-      return interaction.reply(C.cv2Reply([
-        C.container([C.textDisplay(
-          `**Already Verified**\n\nYou are linked to **${existing.roblox_username}** (\`${existing.roblox_id}\`).\n\nContact staff if you need to re-verify.`
-        )], 0x57F287)
-      ], true));
+      return interaction.reply(C.ok(
+        `**Already Verified**\n\nYou are linked to **${existing.roblox_username}** (\`${existing.roblox_id}\`).\n\nContact staff if you need to re-verify.`,
+        true
+      ));
     }
 
     const modal = new ModalBuilder()
@@ -46,16 +45,20 @@ module.exports = {
     const existing = db.prepare('SELECT * FROM verifications WHERE discord_id = ? AND guild_id = ?')
       .get(message.author.id, guildId);
     if (existing) {
-      return C.prefixSend(message, [C.container([C.textDisplay(
+      return C.prefixOk(message,
         `**Already Verified**\n\nYou are linked to **${existing.roblox_username}** (\`${existing.roblox_id}\`).\n\nContact staff if you need to re-verify.`
-      )], 0x57F287)]);
+      );
     }
 
     const username = args[0];
     if (!username) {
-      return C.prefixSend(message, [C.container([C.textDisplay(
-        'Usage: `!verify <roblox_username>`\n\nProvide your exact Roblox username.'
-      )], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'verify',
+        description: 'Link your Roblox account to your Discord account.',
+        syntax: `.verify <roblox_username>`,
+        example: `.verify builderman`,
+        aliases: [],
+      }));
     }
 
     let robloxUser;
@@ -64,17 +67,13 @@ module.exports = {
       if (!found) throw new Error('not found');
       robloxUser = await roblox.getUserById(found.id);
     } catch {
-      return C.prefixSend(message, [C.container([C.textDisplay(
-        `Roblox user \`${username}\` not found. Check the spelling and try again.`
-      )], 0xED4245)]);
+      return C.prefixErr(message, `Roblox user \`${username}\` not found. Check the spelling and try again.`);
     }
 
     const alreadyLinked = db.prepare('SELECT * FROM verifications WHERE roblox_id = ? AND guild_id = ?')
       .get(String(robloxUser.id), guildId);
     if (alreadyLinked) {
-      return C.prefixSend(message, [C.container([C.textDisplay(
-        `Roblox account **${robloxUser.name}** is already linked to another Discord account.`
-      )], 0xED4245)]);
+      return C.prefixErr(message, `Roblox account **${robloxUser.name}** is already linked to another Discord account.`);
     }
 
     const code = `LEAD-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
@@ -91,7 +90,7 @@ module.exports = {
         ),
         C.separator(),
         C.actionRow([C.successButton('I added it — Verify Now', 'verify_check')]),
-      ], 0x5865F2)
+      ], C.COLORS.info)
     ]);
   }
 };

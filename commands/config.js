@@ -48,14 +48,22 @@ module.exports = {
       return C.prefixErr(message, 'You need Administrator permission to use this command.');
     }
     const sub = (args[0] ?? '').toLowerCase();
-    if (!sub) return C.prefixSend(message, [C.container([C.textDisplay('Usage: `!config <view|verifiedrole|logchannel|modchannel|muterole> [value]`')], C.COLORS.warning)]);
+    if (!sub) {
+      return message.reply(C.commandCard({
+        name: 'config',
+        description: 'View or update server configuration.',
+        syntax: `.config <view|verifiedrole|logchannel|modchannel|muterole> [value]`,
+        example: `.config verifiedrole @Verified`,
+        aliases: ['cfg'],
+      }));
+    }
 
     const mentionId = (args[1] ?? '').replace(/[<@!&#>]/g, '');
     const role    = mentionId ? message.guild.roles.cache.get(mentionId) : null;
     const channel = mentionId ? message.guild.channels.cache.get(mentionId) : null;
 
     await runConfig(sub, message.guild, { role, channel },
-      (payload) => C.prefixSend(message, payload.components, payload.flags)
+      (payload) => C.prefixSend(message, payload.components)
     );
   }
 };
@@ -65,14 +73,16 @@ async function runConfig(sub, guild, opts, reply) {
 
   if (sub === 'view') {
     const cfg = getGuild(guildId);
-    const lines = [
-      `**Server Configuration**\n`,
-      `Verified Role: ${cfg.verified_role_id ? `<@&${cfg.verified_role_id}>` : 'Not set'}`,
-      `Log Channel: ${cfg.log_channel_id ? `<#${cfg.log_channel_id}>` : 'Not set'}`,
-      `Mod Log Channel: ${cfg.mod_channel_id ? `<#${cfg.mod_channel_id}>` : 'Not set'}`,
-      `Mute Role: ${cfg.mute_role_id ? `<@&${cfg.mute_role_id}>` : 'Not set'}`,
-    ];
-    return reply(C.cv2Reply([C.container([C.textDisplay(lines.join('\n'))], C.COLORS.info)]));
+    return reply(C.card({
+      title: 'Server Configuration',
+      fields: [
+        { name: 'Verified Role',    value: cfg.verified_role_id ? `<@&${cfg.verified_role_id}>` : 'Not set' },
+        { name: 'Log Channel',      value: cfg.log_channel_id   ? `<#${cfg.log_channel_id}>`   : 'Not set' },
+        { name: 'Mod Log Channel',  value: cfg.mod_channel_id   ? `<#${cfg.mod_channel_id}>`   : 'Not set' },
+        { name: 'Mute Role',        value: cfg.mute_role_id     ? `<@&${cfg.mute_role_id}>`    : 'Not set' },
+      ],
+      color: C.COLORS.info,
+    }));
   }
 
   if (sub === 'verifiedrole') {

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { setPrefix, getPrefix } = require('../utils/database');
+const { setPrefix } = require('../utils/database');
 const C = require('../utils/components');
 
 module.exports = {
@@ -21,20 +21,24 @@ module.exports = {
   async execute(interaction) {
     const prefix = interaction.options.getString('prefix');
     setPrefix(interaction.guild.id, prefix);
-    return interaction.reply(C.cv2Reply([
-      C.container([C.textDisplay(`Bot prefix updated to \`${prefix}\``)], 0x57F287)
-    ], true));
+    return interaction.reply(C.ok(`Bot prefix updated to \`${prefix}\``, true));
   },
 
   async prefixExecute(message, args) {
     if (!message.member.permissions.has('Administrator') && message.author.id !== require('../utils/constants').OWNER_ID) {
-      return C.prefixSend(message, [C.container([C.textDisplay('You need Administrator permission to change the prefix.')], 0xED4245)]);
+      return C.prefixErr(message, 'You need Administrator permission to change the prefix.');
     }
     const newPrefix = args[0];
     if (!newPrefix || newPrefix.length > 5) {
-      return C.prefixSend(message, [C.container([C.textDisplay('Usage: `!setprefix <new_prefix>` (1–5 characters)')], 0xFEE75C)]);
+      return message.reply(C.commandCard({
+        name: 'setprefix',
+        description: 'Change the bot prefix for this server.',
+        syntax: `.setprefix <prefix>`,
+        example: `.setprefix !`,
+        aliases: ['prefix'],
+      }));
     }
     setPrefix(message.guild.id, newPrefix);
-    return C.prefixSend(message, [C.container([C.textDisplay(`Bot prefix updated to \`${newPrefix}\``)], 0x57F287)]);
+    return C.prefixOk(message, `Bot prefix updated to \`${newPrefix}\``);
   }
 };

@@ -38,8 +38,13 @@ module.exports = {
       const channel = client.channels.cache.get(settings.channel_id);
       if (!channel) return;
 
-      const user = newPresence.member?.user ?? newPresence.user;
+      const member = newPresence.member;
+      const user   = member?.user ?? newPresence.user;
       if (!user) return;
+
+      const displayName = member?.displayName ?? user.globalName ?? user.username;
+      const username    = user.username ?? 'Unknown';
+      const userId      = user.id;
 
       const pingPart = settings.ping_enabled && settings.ping_role_id
         ? `<@&${settings.ping_role_id}>`
@@ -49,11 +54,12 @@ module.exports = {
         C.container([
           C.textDisplay(
             `**Opp Vanity Detected**\n\n` +
-            `User: ${user} (\`${user.tag}\`)\n` +
+            `User: <@${userId}> — **${displayName}** (\`${username}\`)\n` +
+            `ID: \`${userId}\`\n` +
             `Vanity: \`discord.gg/${vanity}\`\n` +
             `Status: "${custom.state}"`
           ),
-        ], 0xED4245),
+        ], C.COLORS.error),
       ];
 
       try {
@@ -62,6 +68,7 @@ module.exports = {
           flags: C.CV2_FLAG,
           components,
         });
+        logger.info(`Vanity alert sent: ${username} repping discord.gg/${vanity} in guild ${guildId}`);
       } catch (err) {
         logger.warn(`Vanity watcher: failed to send alert: ${err.message}`);
       }
