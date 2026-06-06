@@ -2,6 +2,21 @@ const { ButtonStyle } = require('discord.js');
 
 const CV2_FLAG = 1 << 15;
 
+const COLORS = {
+  success: 0x57F287,
+  error:   0xED4245,
+  warning: 0xFEE75C,
+  info:    0x5865F2,
+  default: 0x2B2D31,
+  white:   0xFFFFFF,
+  black:   0x000000,
+  blurple: 0x5865F2,
+  red:     0xED4245,
+  green:   0x57F287,
+  yellow:  0xFEE75C,
+  grey:    0x4F545C,
+};
+
 function container(components, accentColor = null) {
   const c = { type: 17, components };
   if (accentColor !== null) c.accent_color = accentColor;
@@ -77,13 +92,19 @@ function cv2Update(components) {
   return { flags: CV2_FLAG, components };
 }
 
+function card(components, accentColor = null) {
+  return container(components, accentColor);
+}
+
 async function prefixSend(message, components) {
   return message.reply({ flags: CV2_FLAG, components });
 }
 
 module.exports = {
   CV2_FLAG,
+  COLORS,
   container,
+  card,
   textDisplay,
   separator,
   section,
