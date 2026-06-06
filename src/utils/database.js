@@ -124,6 +124,22 @@ db.exec(`
     guild_id TEXT PRIMARY KEY,
     prefix TEXT NOT NULL DEFAULT '!'
   );
+
+  CREATE TABLE IF NOT EXISTS automod_settings (
+    guild_id TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    check_invites INTEGER NOT NULL DEFAULT 0,
+    check_mentions INTEGER NOT NULL DEFAULT 0,
+    mention_threshold INTEGER NOT NULL DEFAULT 5,
+    action TEXT NOT NULL DEFAULT 'warn'
+  );
+
+  CREATE TABLE IF NOT EXISTS automod_words (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    word TEXT NOT NULL,
+    UNIQUE(guild_id, word)
+  );
 `);
 
 function getPrefix(guildId) {

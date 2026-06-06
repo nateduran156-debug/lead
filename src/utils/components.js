@@ -96,8 +96,28 @@ function card(components, accentColor = null) {
   return container(components, accentColor);
 }
 
+function ok(text, ephemeral = false) {
+  return cv2Reply([container([textDisplay(text)], COLORS.success)], ephemeral);
+}
+
+function err(text, ephemeral = true) {
+  return cv2Reply([container([textDisplay(text)], COLORS.error)], ephemeral);
+}
+
+function warn(text, ephemeral = false) {
+  return cv2Reply([container([textDisplay(text)], COLORS.warning)], ephemeral);
+}
+
 async function prefixSend(message, components) {
   return message.reply({ flags: CV2_FLAG, components });
+}
+
+async function prefixOk(message, text) {
+  return prefixSend(message, [container([textDisplay(text)], COLORS.success)]);
+}
+
+async function prefixErr(message, text) {
+  return prefixSend(message, [container([textDisplay(text)], COLORS.error)]);
 }
 
 module.exports = {
@@ -105,6 +125,11 @@ module.exports = {
   COLORS,
   container,
   card,
+  ok,
+  err,
+  warn,
+  prefixOk,
+  prefixErr,
   textDisplay,
   separator,
   section,
