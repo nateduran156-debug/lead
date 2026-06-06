@@ -9,10 +9,10 @@
   },
   "dependencies": {
     "discord.js": "^14.16.3",
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^11.10.0",
     "axios": "^1.6.8",
-    "dotenv": "^16.4.5",
-    "node-cron": "^3.0.3"
+    "dotenv": "^17.4.2",
+    "node-cron": "^4.2.1"
   },
   "engines": {
     "node": ">=18.0.0"
