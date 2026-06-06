@@ -1,85 +1,90 @@
-import { getAllSniperTargets } from '../utils/database.js';
-import { getUsersByIds, getUserPresence, getHeadshot, getGameInfo } from '../utils/roblox.js';
-import { card, profileLinks, COLORS } from '../utils/components.js';
+const db = require('../utils/database');
+const roblox = require('../utils/roblox');
+const C = require('../utils/components');
+const logger = require('../utils/logger');
 
-const presenceCache = new Map();
+const POLL_INTERVAL_MS = 30_000;
 
-export function startSniperLoop(client) {
-  setInterval(() => runSniperCheck(client), 30000);
-  console.log('Username sniper started (30s interval)');
-}
+async function checkTargets(client) {
+  const targets = db.prepare('SELECT * FROM sniper_targets').all();
+  if (targets.length === 0) return;
 
-async function runSniperCheck(client) {
-  const targets = getAllSniperTargets();
-  if (!targets.length) return;
+  const byGuild = {};
+  for (const t of targets) {
+    if (!byGuild[t.guild_id]) byGuild[t.guild_id] = [];
+    byGuild[t.guild_id].push(t);
+  }
 
-  const uniqueIds = [...new Set(targets.map(t => t.roblox_id).filter(Boolean))];
-  if (!uniqueIds.length) return;
+  for (const [guildId, guildTargets] of Object.entries(byGuild)) {
+    const settings = db.prepare('SELECT * FROM sniper_settings WHERE guild_id = ?').get(guildId);
+    if (!settings?.channel_id) continue;
 
-  let presences;
-  try {
-    presences = await getUserPresence(uniqueIds.map(Number));
-  } catch { return; }
+    const channel = client.channels.cache.get(settings.channel_id);
+    if (!channel) continue;
 
-  for (const presence of presences) {
-    const userId = String(presence.userId);
-    const prev = presenceCache.get(userId);
-    const isOnline = presence.userPresenceType >= 1;
+    const robloxIds = guildTargets.map(t => Number(t.roblox_id));
 
-    if (isOnline && !prev) {
-      presenceCache.set(userId, presence);
-      const relTargets = targets.filter(t => t.roblox_id === userId);
-      for (const target of relTargets) {
-        await notifySniper(client, target, presence);
+    let presences;
+    try {
+      presences = await roblox.getUserPresence(robloxIds);
+    } catch (err) {
+      logger.warn(`Sniper: failed to fetch presences for guild ${guildId}: ${err.message}`);
+      continue;
+    }
+
+    for (const presence of presences) {
+      if (presence.userPresenceType !== 2) continue;
+
+      const target = guildTargets.find(t => String(t.roblox_id) === String(presence.userId));
+      if (!target) continue;
+
+      if (String(target.last_game_id) === String(presence.placeId)) continue;
+
+      db.prepare('UPDATE sniper_targets SET last_game_id = ? WHERE roblox_id = ? AND guild_id = ?')
+        .run(String(presence.placeId), target.roblox_id, guildId);
+
+      let gameName = presence.lastLocation ?? 'Unknown Game';
+      try {
+        const game = await roblox.getGameDetails(presence.placeId);
+        if (game?.name) gameName = game.name;
+      } catch {}
+
+      let avatarUrl = null;
+      try {
+        avatarUrl = await roblox.getUserAvatar(target.roblox_id);
+      } catch {}
+
+      const components = [
+        C.container(
+          [
+            ...(avatarUrl ? [C.section(
+              [C.textDisplay(`**${target.roblox_username ?? target.roblox_id}** is now in a game\n\nGame: **${gameName}**\nRoblox ID: \`${target.roblox_id}\`${target.discord_user_id ? `\nDiscord: <@${target.discord_user_id}>` : ''}`)],
+              C.thumbnail(avatarUrl)
+            )] : [
+              C.textDisplay(`**${target.roblox_username ?? target.roblox_id}** is now in a game\n\nGame: **${gameName}**\nRoblox ID: \`${target.roblox_id}\`${target.discord_user_id ? `\nDiscord: <@${target.discord_user_id}>` : ''}`)
+            ]),
+            C.separator(),
+            C.actionRow([
+              C.linkButton('Join Server', target.server_link),
+              C.primaryButton('Copy Roblox ID', `copy_roblox_id:${target.roblox_id}`),
+            ]),
+          ],
+          0xED4245
+        ),
+      ];
+
+      try {
+        await channel.send({ flags: C.CV2_FLAG, components });
+      } catch (err) {
+        logger.warn(`Sniper: failed to send alert for ${target.roblox_id}: ${err.message}`);
       }
-    } else if (!isOnline && prev) {
-      presenceCache.delete(userId);
     }
   }
 }
 
-async function notifySniper(client, target, presence) {
-  try {
-    const channel = await client.channels.fetch(target.channel_id).catch(() => null);
-    if (!channel) return;
-
-    const headshot = await getHeadshot(target.roblox_id).catch(() => null);
-    let gameInfo = null;
-    if (presence.universeId) {
-      gameInfo = await getGameInfo(presence.universeId).catch(() => null);
-    }
-
-    const fields = [
-      { name: '👤 Username', value: target.roblox_username },
-      { name: '🆔 User ID', value: target.roblox_id },
-      { name: '📍 Status', value: presenceText(presence) },
-      ...(gameInfo ? [
-        { name: '🎮 Game', value: gameInfo.name },
-        { name: '👥 Players', value: `${gameInfo.playing ?? '?'}` },
-      ] : []),
-    ];
-
-    const payload = card({
-      title: `🎯 ${target.roblox_username} is now online!`,
-      color: COLORS.purple,
-      fields,
-      image: headshot,
-      footer: 'Roblox Username Sniper',
-    });
-
-    const row = profileLinks(target.roblox_id, gameInfo?.rootPlaceId);
-    const content = target.notify_role ? `<@&${target.notify_role}>` : null;
-    await channel.send({ content, ...payload, components: [...payload.components, row] });
-  } catch (e) {
-    console.error('Sniper notify error:', e.message);
-  }
-}
-
-function presenceText(p) {
-  switch (p.userPresenceType) {
-    case 1: return '🌐 On Website';
-    case 2: return `🎮 In Game: ${p.lastLocation || 'Unknown'}`;
-    case 3: return `🔧 In Studio: ${p.lastLocation || 'Unknown'}`;
-    default: return '🔴 Offline';
-  }
-}
+module.exports = (client) => {
+  logger.info('Sniper handler started');
+  setInterval(() => {
+    checkTargets(client).catch(err => logger.error('Sniper handler error:', err.message));
+  }, POLL_INTERVAL_MS);
+};

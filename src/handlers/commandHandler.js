@@ -1,35 +1,28 @@
-import { readdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+const fs = require('fs');
+const path = require('path');
+const { Collection } = require('discord.js');
+const logger = require('../utils/logger');
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+module.exports = (client) => {
+  client.prefixCommands = new Collection();
 
-export async function loadCommands(client) {
-  client.commands = new Map();
-  client.aliases = new Map();
-  client.prefixCommands = new Map();
-  client.slashCommands = [];
+  const commandsPath = path.join(__dirname, '..', 'commands');
+  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
 
-  const commandsPath = join(__dirname, '..', 'commands');
-  const categories = readdirSync(commandsPath);
+  for (const file of files) {
+    const command = require(path.join(commandsPath, file));
 
-  for (const category of categories) {
-    const files = readdirSync(join(commandsPath, category)).filter(f => f.endsWith('.js'));
-    for (const file of files) {
-      try {
-        const mod = await import(`../commands/${category}/${file}`);
-        if (mod.data) {
-          client.commands.set(mod.data.name, mod);
-          client.slashCommands.push(mod.data.toJSON());
-          if (mod.aliases) {
-            for (const alias of mod.aliases) client.aliases.set(alias, mod.data.name);
-          }
-        }
-      } catch (e) {
-        console.error(`Failed to load command ${file}:`, e.message);
+    if (command.data && command.execute) {
+      client.commands.set(command.data.name, command);
+      logger.info(`Loaded slash command: ${command.data.name}`);
+    }
+
+    if (command.prefix && command.prefixExecute) {
+      client.prefixCommands.set(command.prefix.name, command);
+      for (const alias of command.prefix.aliases ?? []) {
+        client.prefixCommands.set(alias, command);
       }
+      logger.info(`Loaded prefix command: ${command.prefix.name}${(command.prefix.aliases ?? []).length ? ` (aliases: ${command.prefix.aliases.join(', ')})` : ''}`);
     }
   }
-
-  console.log(`Loaded ${client.commands.size} commands`);
-}
+};
