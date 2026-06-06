@@ -70,7 +70,27 @@ function buildHelp(prefix) {
     C.separator(),
     C.textDisplay(
       `**Tickets**\n` +
-      `\`${prefix}setupticket <verification|tag> [#log_channel]\`\n\n` +
+      `\`${prefix}setupticket <verification|tag> [#log_channel]\``
+    ),
+    C.separator(),
+    C.textDisplay(
+      `**Automod**\n` +
+      `\`${prefix}automod enable / disable\`\n` +
+      `\`${prefix}automod addword <word>\`\n` +
+      `\`${prefix}automod removeword <word>\`\n` +
+      `\`${prefix}automod invites <on|off>\`\n` +
+      `\`${prefix}automod mentions <threshold>\`\n` +
+      `\`${prefix}automod action <warn|timeout|kick|ban>\`\n` +
+      `\`${prefix}automod list\``
+    ),
+    C.separator(),
+    C.textDisplay(
+      `**Config**\n` +
+      `\`${prefix}config view\`\n` +
+      `\`${prefix}config verifiedrole @role\`\n` +
+      `\`${prefix}config logchannel #channel\`\n` +
+      `\`${prefix}config modchannel #channel\`\n` +
+      `\`${prefix}config muterole @role\`\n\n` +
       `**Bot**\n` +
       `\`${prefix}setprefix <prefix>\``
     ),
