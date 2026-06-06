@@ -7,7 +7,13 @@ module.exports = (client) => {
   const files = fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'));
 
   for (const file of files) {
-    const event = require(path.join(eventsPath, file));
+    let event;
+    try {
+      event = require(path.join(eventsPath, file));
+    } catch (err) {
+      logger.warn(`Skipping event ${file} — failed to load: ${err.message}`);
+      continue;
+    }
     if (!event.name || !event.execute) {
       logger.warn(`Skipping event ${file} — missing name or execute`);
       continue;
