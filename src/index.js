@@ -1,39 +1,33 @@
-import 'dotenv/config';
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
-import { loadCommands } from './handlers/commandHandler.js';
-import { loadEvents } from './handlers/eventHandler.js';
-import { setupAntiNukeListeners } from './handlers/antiNuke.js';
-import { initEmojis } from './utils/emojis.js';
+require('dotenv').config();
+
+const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
+const commandHandler = require('./handlers/commandHandler');
+const eventHandler = require('./handlers/eventHandler');
+const sniperHandler = require('./handlers/sniperHandler');
+const logger = require('./utils/logger');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildEmojisAndStickers,
-    GatewayIntentBits.GuildInvites,
-    GatewayIntentBits.GuildWebhooks,
-    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.DirectMessages,
   ],
-  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User],
+  partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
 });
 
-await loadCommands(client);
-await loadEvents(client);
-setupAntiNukeListeners(client);
+client.commands = new Collection();
 
-client.once('ready', async () => {
-  await initEmojis(client);
+commandHandler(client);
+eventHandler(client);
+
+client.once('ready', () => {
+  sniperHandler(client);
 });
 
-client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.guild) return;
-  const { handleAutoMod } = await import('./events/automodHandler.js');
-  await handleAutoMod(message).catch(() => {});
+client.login(process.env.DISCORD_TOKEN).catch(err => {
+  logger.error('Failed to log in:', err.message);
+  process.exit(1);
 });
-
-await client.login(process.env.DISCORD_TOKEN);
