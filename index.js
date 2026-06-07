@@ -1,13 +1,27 @@
 'use strict';
 
-try { require('dotenv').config(); } catch {} // optional: only needed for local .env files
+// Auto-install dependencies if missing — works on any platform that runs node index.js directly
+const { execSync } = require('child_process');
+const fs   = require('fs');
+const path = require('path');
+
+if (!fs.existsSync(path.join(__dirname, 'node_modules', 'discord.js'))) {
+  console.log('[Start] node_modules missing — running npm install...');
+  try {
+    execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
+    console.log('[Start] Dependencies installed successfully.');
+  } catch (e) {
+    console.error('[Start] npm install failed:', e.message);
+    process.exit(1);
+  }
+}
+
+try { require('dotenv').config(); } catch {}
 
 const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const { loadCommands }  = require('./handlers/commandHandler');
 const { loadEvents }    = require('./handlers/eventHandler');
 const { ensureGuild }   = require('./utils/database');
-const fs   = require('fs');
-const path = require('path');
 
 const client = new Client({
   intents: [
