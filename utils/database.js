@@ -115,3 +115,86 @@ module.exports = {
   recordAntiNukeAction, getAntiNukeActions, getVerifyConfig, setVerifyConfig, getVerifiedUser, setVerifiedUser, removeVerifiedUser,
   getAutomodConfig, setAutomodConfig, getTicketConfig, setTicketConfig, openTicket, closeTicket, getOpenTicket,
 };
+
+// ── Aliases and missing functions used by commands ──────────────────────────
+
+// updateGuild: update multiple fields at once on a guild record
+function updateGuild(guildId, fields) {
+  ensureGuild(guildId);
+  Object.assign(store.guilds.get(guildId), fields);
+}
+
+// setGuild: alias for ensureGuild (creates if missing, then updates fields)
+function setGuild(guildId, fields) {
+  ensureGuild(guildId);
+  if (fields) Object.assign(store.guilds.get(guildId), fields);
+}
+
+// getGiveaways: get giveaways by guild and optional status
+function getGiveaways(guildId, status) {
+  return [...store.giveaways.values()].filter(r =>
+    r.guild_id === guildId && (status ? r.status === status : true)
+  );
+}
+
+// getSniperTargets: alias for getSniperTargetsByGuild
+function getSniperTargets(guildId) { return getSniperTargetsByGuild(guildId); }
+
+// getTicket: get a ticket by channel ID
+function getTicket(channelId) { return store.tickets.get(channelId); }
+
+// Rank points setter (set absolute value)
+function setRankPoints(userId, guildId, points) {
+  store.rank_points.set(`${userId}:${guildId}`, { user_id: userId, guild_id: guildId, points });
+}
+
+// clearWhitelistRoles: remove all role whitelist entries for a guild
+function clearWhitelistRoles(guildId) {
+  for (const k of store.whitelist_roles.keys()) {
+    if (k.startsWith(`${guildId}:`)) store.whitelist_roles.delete(k);
+  }
+  return { changes: 1 };
+}
+
+// Vanity track store
+const vanity_tracks = new Map();
+const vanity_logs   = [];
+
+function addVanityTrack(guildId, userId, tag, addedBy) {
+  vanity_tracks.set(`${guildId}:${userId}`, { guild_id: guildId, user_id: userId, tag, added_by: addedBy, added_at: now() });
+}
+function getVanityTracks(guildId) {
+  return [...vanity_tracks.values()].filter(r => r.guild_id === guildId);
+}
+function removeVanityTrack(guildId, userId) {
+  vanity_tracks.delete(`${guildId}:${userId}`);
+  return { changes: 1 };
+}
+function addVanityLog(guildId, userId, action) {
+  vanity_logs.push({ guild_id: guildId, user_id: userId, action, created_at: now() });
+}
+function getVanityLogs(guildId, limit = 50) {
+  return vanity_logs.filter(r => r.guild_id === guildId).slice(-limit).reverse();
+}
+
+// Roblox link store (linkUser / unlinkUser / getUser)
+const linked_users = new Map();
+
+function linkUser(guildId, userId, robloxId, robloxName) {
+  linked_users.set(`${guildId}:${userId}`, { guild_id: guildId, user_id: userId, roblox_id: robloxId, roblox_name: robloxName, linked_at: now() });
+}
+function unlinkUser(guildId, userId) {
+  linked_users.delete(`${guildId}:${userId}`);
+  return { changes: 1 };
+}
+function getUser(guildId, userId) {
+  return linked_users.get(`${guildId}:${userId}`) || getVerifiedUser(guildId, userId) || null;
+}
+
+// Extra exports — appended to the existing module.exports
+Object.assign(module.exports, {
+  updateGuild, setGuild, getGiveaways, getSniperTargets, getTicket,
+  setRankPoints, clearWhitelistRoles,
+  addVanityTrack, getVanityTracks, removeVanityTrack, addVanityLog, getVanityLogs,
+  linkUser, unlinkUser, getUser,
+});
