@@ -1,22 +1,7 @@
 'use strict';
 
-// Auto-install dependencies if missing — works on any platform that runs node index.js directly
-const { execSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
-
-try {
-  require.resolve('discord.js');
-} catch (_) {
-  console.log('[Start] discord.js not found — running npm install...');
-  try {
-    execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
-    console.log('[Start] Dependencies installed successfully.');
-  } catch (e) {
-    console.error('[Start] npm install failed — ensure python3/make/g++ are available:', e.message);
-    process.exit(1);
-  }
-}
 
 try { require('dotenv').config(); } catch {}
 
@@ -110,3 +95,4 @@ client.login(token).catch(err => {
   console.error('[Error] Failed to log in:', err.message);
   process.exit(1);
 });
+
