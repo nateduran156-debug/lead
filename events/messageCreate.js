@@ -1,9 +1,10 @@
 'use strict';
 
 const { getPrefix, resolveAlias, getAutoResponders, ensureGuild } = require('../utils/database');
-const { isWhitelisted }  = require('../utils/whitelist');
-const { err }             = require('../utils/components');
-const { OWNER_ID }        = require('../utils/constants');
+const { isWhitelisted }    = require('../utils/whitelist');
+const { err }               = require('../utils/components');
+const { OWNER_ID }          = require('../utils/constants');
+const { PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
   name: 'messageCreate',
@@ -49,6 +50,14 @@ module.exports = {
 
     if (!isWhitelisted(message.member, category)) {
       return message.reply(err('You are not authorized to use this command.'));
+    }
+
+    // Moderation commands require Administrator permission
+    if (category === 'moderation') {
+      const isOwner = message.member.id === OWNER_ID || message.member.id === message.guild.ownerId;
+      if (!isOwner && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return message.reply(err('You need the **Administrator** permission to use moderation commands.'));
+      }
     }
 
     try {
