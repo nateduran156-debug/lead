@@ -3,6 +3,7 @@
 const { isWhitelisted }         = require('../utils/whitelist');
 const { getGiveaway, updateGiveaway } = require('../utils/database');
 const { ok, err, CV2, COLORS, C } = require('../utils/components');
+const { OWNER_ID }              = require('../utils/constants');
 const {
   ContainerBuilder,
   TextDisplayBuilder,
@@ -29,6 +30,14 @@ module.exports = {
 
       if (!isWhitelisted(interaction.member, category)) {
         return interaction.reply({ ...err('You are not authorized to use this command.'), ephemeral: true });
+      }
+
+      // Moderation commands require Administrator permission
+      if (category === 'moderation') {
+        const isOwner = interaction.member.id === OWNER_ID || interaction.member.id === interaction.guild.ownerId;
+        if (!isOwner && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ ...err('You need the **Administrator** permission to use moderation commands.'), ephemeral: true });
+        }
       }
 
       try {
