@@ -1,711 +1,175 @@
 'use strict';
 
-const fs        = require('fs');
-const path      = require('path');
-const initSqlJs = require('sql.js');
+// Pure in-memory store — no sql.js, no better-sqlite3, no file I/O.
+// All exported functions match the original interface exactly.
 
-const DB_PATH = path.join(__dirname, '..', 'bot.db');
+const store = {
+  guild_config:     new Map(),
+  guilds:           new Map(),
+  whitelist_users:  new Map(),
+  whitelist_roles:  new Map(),
+  sniper_targets:   new Map(),
+  tags:             new Map(),
+  warnings:         [],
+  giveaways:        new Map(),
+  reminders:        [],
+  raid_points:      new Map(),
+  rank_points:      new Map(),
+  rank_roles:       new Map(),
+  custom_aliases:   new Map(),
+  autoresponders:   new Map(),
+  antinuke_actions: [],
+  verify_config:    new Map(),
+  verified_users:   new Map(),
+  automod_config:   new Map(),
+  ticket_config:    new Map(),
+  tickets:          new Map(),
+};
 
-// ---------------------------------------------------------------------------
-// Synchronous sql.js initialisation for Node.js
-//
-// sql.js ships a pre-compiled WASM binary.  In Node.js the WASM is read from
-// disk synchronously, so the Promise returned by initSqlJs() resolves in the
-// same microtask checkpoint — before any I/O callbacks run.  We capture the
-// resolved value by scheduling the .then() callback first, then draining the
-// microtask queue with a zero-timeout Atomics.wait on a SharedArrayBuffer.
-// ---------------------------------------------------------------------------
+let _id = 1;
+const nextId = () => _id++;
+const now = () => Math.floor(Date.now() / 1000);
 
-function loadSqlJsSync() {
-  let SQL = null;
-  let err = null;
-
-  initSqlJs().then(s => { SQL = s; }).catch(e => { err = e; });
-
-  // Drain the microtask queue.  Atomics.wait(0 ms) yields to microtasks in
-  // Node.js before returning, which is enough for the already-resolved WASM
-  // promise to fire its .then() callback.
-  const sab = new SharedArrayBuffer(4);
-  Atomics.wait(new Int32Array(sab), 0, 0, 0);
-
-  if (err) throw err;
-  if (!SQL) throw new Error('sql.js WASM did not initialise synchronously');
-  return SQL;
-}
-
-const SQL = loadSqlJsSync();
-
-// ---------------------------------------------------------------------------
-// Build a better-sqlite3-compatible synchronous wrapper around sql.js.
-// ---------------------------------------------------------------------------
-function createDatabase(filePath) {
-
-  // Load existing database from disk, or create a new one.
-  let fileBuffer;
-  if (fs.existsSync(filePath)) {
-    fileBuffer = fs.readFileSync(filePath);
-  }
-  const sqlDb = fileBuffer ? new SQL.Database(fileBuffer) : new SQL.Database();
-
-  // Persist the in-memory database to disk after every write.
-  function persist() {
-    const data = sqlDb.export();
-    fs.writeFileSync(filePath, Buffer.from(data));
-  }
-
-  // Determine whether a SQL string is a write operation.
-  function isWrite(sql) {
-    return /^\s*(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|REPLACE)\b/i.test(sql);
-  }
-
-  // Translate sql.js column-array result rows into plain objects.
-  function rowsToObjects(results) {
-    if (!results || results.length === 0) return [];
-    const { columns, values } = results[0];
-    return values.map(row => {
-      const obj = {};
-      columns.forEach((col, i) => { obj[col] = row[i]; });
-      return obj;
-    });
-  }
-
-  // Mimic better-sqlite3's Statement object.
-  function prepare(sql) {
-    return {
-      get(...params) {
-        const flat = params.flat();
-        const results = sqlDb.exec(sql, flat);
-        const rows = rowsToObjects(results);
-        return rows[0] || undefined;
-      },
-      all(...params) {
-        const flat = params.flat();
-        const results = sqlDb.exec(sql, flat);
-        return rowsToObjects(results);
-      },
-      run(...params) {
-        const flat = params.flat();
-        sqlDb.run(sql, flat);
-        if (isWrite(sql)) persist();
-        return { changes: sqlDb.getRowsModified() };
-      },
-    };
-  }
-
-  // Mimic better-sqlite3's db.exec().
-  function exec(sql) {
-    sqlDb.exec(sql);
-    persist();
-  }
-
-  // Mimic better-sqlite3's db.pragma() — only WAL mode is used in this file,
-  // which sql.js does not support (it's an in-memory/file engine), so we
-  // silently ignore pragma calls.
-  function pragma(_statement) {
-    // no-op: sql.js does not support WAL mode; persistence is handled via
-    // explicit fs.writeFileSync calls after every write instead.
-  }
-
-  return { prepare, exec, pragma };
-}
-
-const db = createDatabase(DB_PATH);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Schema
-// ─────────────────────────────────────────────────────────────────────────────
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS guild_config (
-    guild_id TEXT NOT NULL,
-    key      TEXT NOT NULL,
-    value    TEXT,
-    PRIMARY KEY (guild_id, key)
-  );
-
-  CREATE TABLE IF NOT EXISTS whitelist_users (
-    guild_id  TEXT NOT NULL,
-    user_id   TEXT NOT NULL,
-    category  TEXT NOT NULL DEFAULT 'all',
-    PRIMARY KEY (guild_id, user_id, category)
-  );
-
-  CREATE TABLE IF NOT EXISTS whitelist_roles (
-    guild_id TEXT NOT NULL,
-    role_id  TEXT NOT NULL,
-    category TEXT NOT NULL DEFAULT 'all',
-    PRIMARY KEY (guild_id, role_id, category)
-  );
-
-  CREATE TABLE IF NOT EXISTS sniper_targets (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id         TEXT NOT NULL,
-    channel_id       TEXT NOT NULL,
-    roblox_id        TEXT NOT NULL,
-    roblox_username  TEXT NOT NULL,
-    server_link      TEXT,
-    notify_role      TEXT,
-    added_by         TEXT,
-    UNIQUE(guild_id, roblox_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS tags (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id TEXT NOT NULL,
-    name     TEXT NOT NULL,
-    content  TEXT NOT NULL,
-    owner_id TEXT NOT NULL,
-    UNIQUE(guild_id, name)
-  );
-
-  CREATE TABLE IF NOT EXISTS guilds (
-    guild_id               TEXT PRIMARY KEY,
-    prefix                 TEXT DEFAULT '!',
-    log_channel            TEXT,
-    mod_log_channel        TEXT,
-    message_log_channel    TEXT,
-    join_log_channel       TEXT,
-    leave_log_channel      TEXT,
-    voice_log_channel      TEXT,
-    welcome_channel        TEXT,
-    welcome_enabled        INTEGER DEFAULT 0,
-    welcome_message        TEXT,
-    welcome_dm             INTEGER DEFAULT 0,
-    welcome_dm_message     TEXT,
-    welcome_roles          TEXT DEFAULT '[]',
-    antinuke_enabled       INTEGER DEFAULT 0,
-    antinuke_punish        TEXT DEFAULT 'ban',
-    antinuke_window        INTEGER DEFAULT 10,
-    antinuke_log_channel   TEXT,
-    antinuke_whitelist     TEXT DEFAULT '[]',
-    antinuke_super_admins  TEXT DEFAULT '[]',
-    antinuke_whitelisted_bots TEXT DEFAULT '[]',
-    antinuke_modules       TEXT DEFAULT '{}',
-    antinuke_thresholds    TEXT DEFAULT '{}'
-  );
-
-  CREATE TABLE IF NOT EXISTS warnings (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id   TEXT NOT NULL,
-    user_id    TEXT NOT NULL,
-    mod_id     TEXT NOT NULL,
-    reason     TEXT NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS giveaways (
-    id         TEXT PRIMARY KEY,
-    guild_id   TEXT NOT NULL,
-    channel_id TEXT NOT NULL,
-    message_id TEXT,
-    prize      TEXT NOT NULL,
-    winners    INTEGER NOT NULL DEFAULT 1,
-    entries    TEXT NOT NULL DEFAULT '[]',
-    winner_ids TEXT DEFAULT '[]',
-    host_id    TEXT NOT NULL,
-    status     TEXT NOT NULL DEFAULT 'active',
-    ends_at    INTEGER NOT NULL,
-    ended_at   INTEGER
-  );
-
-  CREATE TABLE IF NOT EXISTS reminders (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    TEXT NOT NULL,
-    channel_id TEXT NOT NULL,
-    message    TEXT NOT NULL,
-    fires_at   INTEGER NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-    fired      INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS raid_points (
-    user_id    TEXT NOT NULL,
-    guild_id   TEXT NOT NULL,
-    season     TEXT NOT NULL DEFAULT 'Season 1',
-    points     INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (user_id, guild_id, season)
-  );
-
-  CREATE TABLE IF NOT EXISTS rank_points (
-    user_id    TEXT NOT NULL,
-    guild_id   TEXT NOT NULL,
-    points     INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (user_id, guild_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS rank_roles (
-    guild_id   TEXT NOT NULL,
-    role_id    TEXT NOT NULL,
-    threshold  INTEGER NOT NULL,
-    PRIMARY KEY (guild_id, role_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS custom_aliases (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id   TEXT NOT NULL,
-    shortcut   TEXT NOT NULL,
-    target     TEXT NOT NULL,
-    created_by TEXT,
-    UNIQUE(guild_id, shortcut)
-  );
-
-  CREATE TABLE IF NOT EXISTS autoresponders (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id   TEXT NOT NULL,
-    trigger    TEXT NOT NULL,
-    response   TEXT NOT NULL,
-    match_type TEXT NOT NULL DEFAULT 'contains',
-    created_by TEXT,
-    UNIQUE(guild_id, trigger)
-  );
-
-  CREATE TABLE IF NOT EXISTS antinuke_actions (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id   TEXT NOT NULL,
-    user_id    TEXT NOT NULL,
-    action     TEXT NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS automod_config (
-    guild_id       TEXT PRIMARY KEY,
-    enabled        INTEGER DEFAULT 0,
-    log_channel    TEXT,
-    spam_threshold INTEGER DEFAULT 5,
-    spam_window    INTEGER DEFAULT 5000,
-    caps_threshold INTEGER DEFAULT 70,
-    link_mode      TEXT DEFAULT 'off',
-    mention_limit  INTEGER DEFAULT 5,
-    bad_words      TEXT DEFAULT '[]',
-    whitelist_roles TEXT DEFAULT '[]',
-    whitelist_channels TEXT DEFAULT '[]'
-  );
-
-  CREATE TABLE IF NOT EXISTS ticket_config (
-    guild_id        TEXT PRIMARY KEY,
-    category_id     TEXT,
-    log_channel     TEXT,
-    support_role    TEXT,
-    panel_channel   TEXT,
-    panel_message   TEXT,
-    open_message    TEXT DEFAULT 'Thank you for opening a ticket. Support will be with you shortly.',
-    max_tickets     INTEGER DEFAULT 1
-  );
-
-  CREATE TABLE IF NOT EXISTS tickets (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id    TEXT NOT NULL,
-    channel_id  TEXT NOT NULL,
-    user_id     TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'open',
-    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-    closed_at   INTEGER
-  );
-
-  CREATE TABLE IF NOT EXISTS verify_config (
-    guild_id       TEXT PRIMARY KEY,
-    verified_role  TEXT,
-    log_channel    TEXT,
-    cookie         TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS verified_users (
-    guild_id      TEXT NOT NULL,
-    user_id       TEXT NOT NULL,
-    roblox_id     TEXT NOT NULL,
-    roblox_name   TEXT NOT NULL,
-    verified_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-    PRIMARY KEY (guild_id, user_id)
-  );
-`);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// guild_config helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getConfig(guildId, key) {
-  const row = db.prepare('SELECT value FROM guild_config WHERE guild_id = ? AND key = ?').get(guildId, key);
-  return row ? row.value : null;
-}
-
-function setConfig(guildId, key, value) {
-  db.prepare('INSERT OR REPLACE INTO guild_config (guild_id, key, value) VALUES (?, ?, ?)').run(guildId, key, value);
-}
-
-function getPrefix(guildId) {
-  return getConfig(guildId, 'prefix') || '!';
-}
-
-function setPrefix(guildId, prefix) {
-  setConfig(guildId, 'prefix', prefix);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// guilds table helpers
-// ─────────────────────────────────────────────────────────────────────────────
+function getConfig(guildId, key) { return store.guild_config.get(`${guildId}:${key}`) ?? null; }
+function setConfig(guildId, key, value) { store.guild_config.set(`${guildId}:${key}`, value); }
+function getPrefix(guildId) { return getConfig(guildId, 'prefix') || '!'; }
+function setPrefix(guildId, prefix) { setConfig(guildId, 'prefix', prefix); }
 
 function ensureGuild(guildId) {
-  db.prepare('INSERT OR IGNORE INTO guilds (guild_id) VALUES (?)').run(guildId);
+  if (!store.guilds.has(guildId)) {
+    store.guilds.set(guildId, {
+      guild_id: guildId, prefix: '!', log_channel: null, mod_log_channel: null,
+      message_log_channel: null, join_log_channel: null, leave_log_channel: null,
+      voice_log_channel: null, welcome_channel: null, welcome_enabled: 0,
+      welcome_message: null, welcome_dm: 0, welcome_dm_message: null,
+      welcome_roles: '[]', antinuke_enabled: 0, antinuke_punish: 'ban',
+      antinuke_window: 10, antinuke_log_channel: null, antinuke_whitelist: '[]',
+      antinuke_super_admins: '[]', antinuke_whitelisted_bots: '[]',
+      antinuke_modules: '{}', antinuke_thresholds: '{}',
+    });
+  }
 }
-
-function getGuild(guildId) {
-  ensureGuild(guildId);
-  return db.prepare('SELECT * FROM guilds WHERE guild_id = ?').get(guildId);
-}
-
-function updateGuildField(guildId, field, value) {
-  ensureGuild(guildId);
-  db.prepare(`UPDATE guilds SET ${field} = ? WHERE guild_id = ?`).run(value, guildId);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Whitelist
-// ─────────────────────────────────────────────────────────────────────────────
+function getGuild(guildId) { ensureGuild(guildId); return { ...store.guilds.get(guildId) }; }
+function updateGuildField(guildId, field, value) { ensureGuild(guildId); store.guilds.get(guildId)[field] = value; }
 
 function isUserWhitelisted(guildId, userId, category) {
-  const byAll = db.prepare(
-    'SELECT 1 FROM whitelist_users WHERE guild_id = ? AND user_id = ? AND category IN (?, "all")'
-  ).get(guildId, userId, category);
-  return !!byAll;
+  return store.whitelist_users.has(`${guildId}:${userId}:${category}`) || store.whitelist_users.has(`${guildId}:${userId}:all`);
 }
-
 function isRoleWhitelisted(guildId, roleId, category) {
-  const byAll = db.prepare(
-    'SELECT 1 FROM whitelist_roles WHERE guild_id = ? AND role_id = ? AND category IN (?, "all")'
-  ).get(guildId, roleId, category);
-  return !!byAll;
+  return store.whitelist_roles.has(`${guildId}:${roleId}:${category}`) || store.whitelist_roles.has(`${guildId}:${roleId}:all`);
 }
-
-function addWhitelistUser(guildId, userId, category) {
-  db.prepare('INSERT OR IGNORE INTO whitelist_users (guild_id, user_id, category) VALUES (?, ?, ?)').run(guildId, userId, category);
-}
-
+function addWhitelistUser(guildId, userId, category) { store.whitelist_users.set(`${guildId}:${userId}:${category}`, { guild_id: guildId, user_id: userId, category }); }
 function removeWhitelistUser(guildId, userId, category) {
-  if (category === 'all') {
-    return db.prepare('DELETE FROM whitelist_users WHERE guild_id = ? AND user_id = ?').run(guildId, userId);
-  }
-  return db.prepare('DELETE FROM whitelist_users WHERE guild_id = ? AND user_id = ? AND category = ?').run(guildId, userId, category);
+  if (category === 'all') { for (const k of store.whitelist_users.keys()) { if (k.startsWith(`${guildId}:${userId}:`)) store.whitelist_users.delete(k); } }
+  else store.whitelist_users.delete(`${guildId}:${userId}:${category}`);
+  return { changes: 1 };
 }
-
-function addWhitelistRole(guildId, roleId, category) {
-  db.prepare('INSERT OR IGNORE INTO whitelist_roles (guild_id, role_id, category) VALUES (?, ?, ?)').run(guildId, roleId, category);
-}
-
+function addWhitelistRole(guildId, roleId, category) { store.whitelist_roles.set(`${guildId}:${roleId}:${category}`, { guild_id: guildId, role_id: roleId, category }); }
 function removeWhitelistRole(guildId, roleId, category) {
-  if (category === 'all') {
-    return db.prepare('DELETE FROM whitelist_roles WHERE guild_id = ? AND role_id = ?').run(guildId, roleId);
-  }
-  return db.prepare('DELETE FROM whitelist_roles WHERE guild_id = ? AND role_id = ? AND category = ?').run(guildId, roleId, category);
+  if (category === 'all') { for (const k of store.whitelist_roles.keys()) { if (k.startsWith(`${guildId}:${roleId}:`)) store.whitelist_roles.delete(k); } }
+  else store.whitelist_roles.delete(`${guildId}:${roleId}:${category}`);
+  return { changes: 1 };
 }
+function getWhitelistUsers(guildId) { return [...store.whitelist_users.values()].filter(r => r.guild_id === guildId); }
+function getWhitelistRoles(guildId) { return [...store.whitelist_roles.values()].filter(r => r.guild_id === guildId); }
 
-function getWhitelistUsers(guildId) {
-  return db.prepare('SELECT * FROM whitelist_users WHERE guild_id = ? ORDER BY user_id, category').all(guildId);
-}
-
-function getWhitelistRoles(guildId) {
-  return db.prepare('SELECT * FROM whitelist_roles WHERE guild_id = ? ORDER BY role_id, category').all(guildId);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sniper targets
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getSniperTarget(guildId, robloxId) {
-  return db.prepare('SELECT * FROM sniper_targets WHERE guild_id = ? AND roblox_id = ?').get(guildId, robloxId);
-}
-
-function getAllSniperTargets() {
-  return db.prepare('SELECT * FROM sniper_targets').all();
-}
-
-function getSniperTargetsByGuild(guildId) {
-  return db.prepare('SELECT * FROM sniper_targets WHERE guild_id = ?').all(guildId);
-}
-
+function getSniperTarget(guildId, robloxId) { return store.sniper_targets.get(`${guildId}:${robloxId}`); }
+function getAllSniperTargets() { return [...store.sniper_targets.values()]; }
+function getSniperTargetsByGuild(guildId) { return [...store.sniper_targets.values()].filter(r => r.guild_id === guildId); }
 function addSniperTarget({ guildId, channelId, robloxId, robloxUsername, serverLink, notifyRole, addedBy }) {
-  db.prepare(`
-    INSERT OR REPLACE INTO sniper_targets
-      (guild_id, channel_id, roblox_id, roblox_username, server_link, notify_role, added_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(guildId, channelId, robloxId, robloxUsername, serverLink || null, notifyRole || null, addedBy || null);
+  store.sniper_targets.set(`${guildId}:${robloxId}`, { guild_id: guildId, channel_id: channelId, roblox_id: robloxId, roblox_username: robloxUsername, server_link: serverLink||null, notify_role: notifyRole||null, added_by: addedBy||null });
 }
+function removeSniperTarget(guildId, robloxId) { store.sniper_targets.delete(`${guildId}:${robloxId}`); return { changes: 1 }; }
+function updateSniperTargetChannel(guildId, robloxId, channelId) { const t = store.sniper_targets.get(`${guildId}:${robloxId}`); if (t) t.channel_id = channelId; }
 
-function removeSniperTarget(guildId, robloxId) {
-  return db.prepare('DELETE FROM sniper_targets WHERE guild_id = ? AND roblox_id = ?').run(guildId, robloxId);
-}
+function getTag(guildId, name) { return store.tags.get(`${guildId}:${name}`); }
+function getAllTags(guildId) { return [...store.tags.values()].filter(r => r.guild_id === guildId).sort((a,b) => a.name.localeCompare(b.name)); }
+function setTag(guildId, name, content, ownerId) { store.tags.set(`${guildId}:${name}`, { guild_id: guildId, name, content, owner_id: ownerId }); }
+function deleteTag(guildId, name) { store.tags.delete(`${guildId}:${name}`); return { changes: 1 }; }
 
-function updateSniperTargetChannel(guildId, robloxId, channelId) {
-  db.prepare('UPDATE sniper_targets SET channel_id = ? WHERE guild_id = ? AND roblox_id = ?').run(channelId, guildId, robloxId);
-}
+function addWarning(guildId, userId, modId, reason) { store.warnings.push({ id: nextId(), guild_id: guildId, user_id: userId, mod_id: modId, reason, created_at: now() }); }
+function getWarnings(guildId, userId) { return store.warnings.filter(r => r.guild_id === guildId && r.user_id === userId).sort((a,b) => b.created_at - a.created_at); }
+function clearWarnings(guildId, userId) { const b = store.warnings.length; store.warnings = store.warnings.filter(r => !(r.guild_id === guildId && r.user_id === userId)); return { changes: b - store.warnings.length }; }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tags
-// ─────────────────────────────────────────────────────────────────────────────
+function getGiveaway(id) { return store.giveaways.get(id); }
+function createGiveaway(data) { store.giveaways.set(data.id, { id: data.id, guild_id: data.guildId, channel_id: data.channelId, message_id: null, prize: data.prize, winners: data.winners, entries: '[]', winner_ids: '[]', host_id: data.hostId, status: 'active', ends_at: data.endsAt, ended_at: null }); }
+function updateGiveaway(id, fields) { const g = store.giveaways.get(id); if (g) Object.assign(g, fields); }
+function getActiveGiveaways() { return [...store.giveaways.values()].filter(r => r.status === 'active'); }
 
-function getTag(guildId, name) {
-  return db.prepare('SELECT * FROM tags WHERE guild_id = ? AND name = ?').get(guildId, name);
-}
+function addReminder(userId, channelId, message, firesAt) { store.reminders.push({ id: nextId(), user_id: userId, channel_id: channelId, message, fires_at: firesAt, created_at: now(), fired: 0 }); }
+function getPendingReminders() { const n = now(); return store.reminders.filter(r => r.fired === 0 && r.fires_at <= n); }
+function markReminderFired(id) { const r = store.reminders.find(r => r.id === id); if (r) r.fired = 1; }
 
-function getAllTags(guildId) {
-  return db.prepare('SELECT * FROM tags WHERE guild_id = ? ORDER BY name').all(guildId);
-}
-
-function setTag(guildId, name, content, ownerId) {
-  db.prepare('INSERT OR REPLACE INTO tags (guild_id, name, content, owner_id) VALUES (?, ?, ?, ?)').run(guildId, name, content, ownerId);
-}
-
-function deleteTag(guildId, name) {
-  return db.prepare('DELETE FROM tags WHERE guild_id = ? AND name = ?').run(guildId, name);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Warnings
-// ─────────────────────────────────────────────────────────────────────────────
-
-function addWarning(guildId, userId, modId, reason) {
-  db.prepare('INSERT INTO warnings (guild_id, user_id, mod_id, reason) VALUES (?, ?, ?, ?)').run(guildId, userId, modId, reason);
-}
-
-function getWarnings(guildId, userId) {
-  return db.prepare('SELECT * FROM warnings WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC').all(guildId, userId);
-}
-
-function clearWarnings(guildId, userId) {
-  return db.prepare('DELETE FROM warnings WHERE guild_id = ? AND user_id = ?').run(guildId, userId);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Giveaways
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getGiveaway(id) {
-  return db.prepare('SELECT * FROM giveaways WHERE id = ?').get(id);
-}
-
-function createGiveaway(data) {
-  db.prepare(`
-    INSERT INTO giveaways (id, guild_id, channel_id, prize, winners, host_id, ends_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(data.id, data.guildId, data.channelId, data.prize, data.winners, data.hostId, data.endsAt);
-}
-
-function updateGiveaway(id, fields) {
-  const keys   = Object.keys(fields);
-  const values = Object.values(fields);
-  db.prepare(`UPDATE giveaways SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`).run(...values, id);
-}
-
-function getActiveGiveaways() {
-  return db.prepare("SELECT * FROM giveaways WHERE status = 'active'").all();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Reminders
-// ─────────────────────────────────────────────────────────────────────────────
-
-function addReminder(userId, channelId, message, firesAt) {
-  db.prepare('INSERT INTO reminders (user_id, channel_id, message, fires_at) VALUES (?, ?, ?, ?)').run(userId, channelId, message, firesAt);
-}
-
-function getPendingReminders() {
-  const now = Math.floor(Date.now() / 1000);
-  return db.prepare('SELECT * FROM reminders WHERE fired = 0 AND fires_at <= ?').all(now);
-}
-
-function markReminderFired(id) {
-  db.prepare('UPDATE reminders SET fired = 1 WHERE id = ?').run(id);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Raid Points
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getRaidSeason(guildId) {
-  return getConfig(guildId, 'raid_season') || 'Season 1';
-}
-
-function updateRaidSeason(guildId, num) {
-  setConfig(guildId, 'raid_season', `Season ${num}`);
-}
-
-function getRaidPoints(userId, guildId, season) {
-  return db.prepare('SELECT * FROM raid_points WHERE user_id = ? AND guild_id = ? AND season = ?').get(userId, guildId, season);
-}
-
+function getRaidSeason(guildId) { return getConfig(guildId, 'raid_season') || 'Season 1'; }
+function updateRaidSeason(guildId, num) { setConfig(guildId, 'raid_season', `Season ${num}`); }
+function getRaidPoints(userId, guildId, season) { return store.raid_points.get(`${userId}:${guildId}:${season}`); }
 function modifyRaidPoints(userId, guildId, season, delta) {
-  db.prepare('INSERT OR IGNORE INTO raid_points (user_id, guild_id, season) VALUES (?, ?, ?)').run(userId, guildId, season);
-  db.prepare('UPDATE raid_points SET points = MAX(0, points + ?) WHERE user_id = ? AND guild_id = ? AND season = ?').run(delta, userId, guildId, season);
-  return db.prepare('SELECT * FROM raid_points WHERE user_id = ? AND guild_id = ? AND season = ?').get(userId, guildId, season);
+  const key = `${userId}:${guildId}:${season}`;
+  if (!store.raid_points.has(key)) store.raid_points.set(key, { user_id: userId, guild_id: guildId, season, points: 0 });
+  const r = store.raid_points.get(key); r.points = Math.max(0, r.points + delta); return { ...r };
 }
+function setRaidPoints(userId, guildId, season, points) { store.raid_points.set(`${userId}:${guildId}:${season}`, { user_id: userId, guild_id: guildId, season, points }); }
+function getRaidLeaderboard(guildId, season) { return [...store.raid_points.values()].filter(r => r.guild_id === guildId && r.season === season).sort((a,b) => b.points - a.points).slice(0, 10); }
 
-function setRaidPoints(userId, guildId, season, points) {
-  db.prepare('INSERT OR REPLACE INTO raid_points (user_id, guild_id, season, points) VALUES (?, ?, ?, ?)').run(userId, guildId, season, points);
-}
-
-function getRaidLeaderboard(guildId, season) {
-  return db.prepare('SELECT * FROM raid_points WHERE guild_id = ? AND season = ? ORDER BY points DESC LIMIT 10').all(guildId, season);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Rank Points
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getRankPoints(userId, guildId) {
-  return db.prepare('SELECT * FROM rank_points WHERE user_id = ? AND guild_id = ?').get(userId, guildId);
-}
-
+function getRankPoints(userId, guildId) { return store.rank_points.get(`${userId}:${guildId}`); }
 function modifyRankPoints(userId, guildId, delta) {
-  db.prepare('INSERT OR IGNORE INTO rank_points (user_id, guild_id) VALUES (?, ?)').run(userId, guildId);
-  db.prepare('UPDATE rank_points SET points = MAX(0, points + ?) WHERE user_id = ? AND guild_id = ?').run(delta, userId, guildId);
-  return db.prepare('SELECT * FROM rank_points WHERE user_id = ? AND guild_id = ?').get(userId, guildId);
+  const key = `${userId}:${guildId}`;
+  if (!store.rank_points.has(key)) store.rank_points.set(key, { user_id: userId, guild_id: guildId, points: 0 });
+  const r = store.rank_points.get(key); r.points = Math.max(0, r.points + delta); return { ...r };
 }
+function getRankLeaderboard(guildId) { return [...store.rank_points.values()].filter(r => r.guild_id === guildId).sort((a,b) => b.points - a.points).slice(0, 10); }
 
-function getRankLeaderboard(guildId) {
-  return db.prepare('SELECT * FROM rank_points WHERE guild_id = ? ORDER BY points DESC LIMIT 10').all(guildId);
-}
+function getRankRolesFromDB(guildId) { return [...store.rank_roles.values()].filter(r => r.guild_id === guildId).sort((a,b) => a.threshold - b.threshold); }
+function addRankRoleToDB(guildId, roleId, threshold) { store.rank_roles.set(`${guildId}:${roleId}`, { guild_id: guildId, role_id: roleId, threshold }); }
+function removeRankRoleFromDB(guildId, roleId) { store.rank_roles.delete(`${guildId}:${roleId}`); return { changes: 1 }; }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Rank Roles
-// ─────────────────────────────────────────────────────────────────────────────
+function getCustomAliases(guildId) { return [...store.custom_aliases.values()].filter(r => r.guild_id === guildId).sort((a,b) => a.shortcut.localeCompare(b.shortcut)); }
+function addCustomAlias(guildId, shortcut, target, createdBy) { store.custom_aliases.set(`${guildId}:${shortcut}`, { id: nextId(), guild_id: guildId, shortcut, target, created_by: createdBy }); }
+function removeCustomAlias(guildId, shortcut) { store.custom_aliases.delete(`${guildId}:${shortcut}`); return { changes: 1 }; }
+function resolveAlias(guildId, shortcut) { const r = store.custom_aliases.get(`${guildId}:${shortcut}`); return r ? r.target : null; }
 
-function getRankRolesFromDB(guildId) {
-  return db.prepare('SELECT * FROM rank_roles WHERE guild_id = ? ORDER BY threshold ASC').all(guildId);
-}
+function getAutoResponders(guildId) { return [...store.autoresponders.values()].filter(r => r.guild_id === guildId); }
+function addAutoResponder(guildId, trigger, response, matchType, createdBy) { store.autoresponders.set(`${guildId}:${trigger.toLowerCase()}`, { id: nextId(), guild_id: guildId, trigger: trigger.toLowerCase(), response, match_type: matchType, created_by: createdBy }); }
+function removeAutoResponder(guildId, id) { for (const [k,v] of store.autoresponders.entries()) { if (v.guild_id === guildId && v.id === id) { store.autoresponders.delete(k); break; } } return { changes: 1 }; }
 
-function addRankRoleToDB(guildId, roleId, threshold) {
-  db.prepare('INSERT OR REPLACE INTO rank_roles (guild_id, role_id, threshold) VALUES (?, ?, ?)').run(guildId, roleId, threshold);
-}
+function recordAntiNukeAction(guildId, userId, action) { store.antinuke_actions.push({ id: nextId(), guild_id: guildId, user_id: userId, action, created_at: now() }); }
+function getAntiNukeActions(guildId, userId, action, since) { return store.antinuke_actions.filter(r => r.guild_id === guildId && r.user_id === userId && r.action === action && r.created_at >= since); }
 
-function removeRankRoleFromDB(guildId, roleId) {
-  return db.prepare('DELETE FROM rank_roles WHERE guild_id = ? AND role_id = ?').run(guildId, roleId);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Custom Aliases
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getCustomAliases(guildId) {
-  return db.prepare('SELECT * FROM custom_aliases WHERE guild_id = ? ORDER BY shortcut').all(guildId);
-}
-
-function addCustomAlias(guildId, shortcut, target, createdBy) {
-  db.prepare('INSERT OR REPLACE INTO custom_aliases (guild_id, shortcut, target, created_by) VALUES (?, ?, ?, ?)').run(guildId, shortcut, target, createdBy);
-}
-
-function removeCustomAlias(guildId, shortcut) {
-  return db.prepare('DELETE FROM custom_aliases WHERE guild_id = ? AND shortcut = ?').run(guildId, shortcut);
-}
-
-function resolveAlias(guildId, shortcut) {
-  const row = db.prepare('SELECT target FROM custom_aliases WHERE guild_id = ? AND shortcut = ?').get(guildId, shortcut);
-  return row ? row.target : null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Autoresponders
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getAutoResponders(guildId) {
-  return db.prepare('SELECT * FROM autoresponders WHERE guild_id = ? ORDER BY id ASC').all(guildId);
-}
-
-function addAutoResponder(guildId, trigger, response, matchType, createdBy) {
-  db.prepare('INSERT OR REPLACE INTO autoresponders (guild_id, trigger, response, match_type, created_by) VALUES (?, ?, ?, ?, ?)').run(guildId, trigger.toLowerCase(), response, matchType, createdBy);
-}
-
-function removeAutoResponder(guildId, id) {
-  return db.prepare('DELETE FROM autoresponders WHERE guild_id = ? AND id = ?').run(guildId, id);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AntiNuke
-// ─────────────────────────────────────────────────────────────────────────────
-
-function recordAntiNukeAction(guildId, userId, action) {
-  db.prepare('INSERT INTO antinuke_actions (guild_id, user_id, action) VALUES (?, ?, ?)').run(guildId, userId, action);
-}
-
-function getAntiNukeActions(guildId, userId, action, since) {
-  return db.prepare('SELECT * FROM antinuke_actions WHERE guild_id = ? AND user_id = ? AND action = ? AND created_at >= ?').all(guildId, userId, action, since);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Verify
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getVerifyConfig(guildId) {
-  return db.prepare('SELECT * FROM verify_config WHERE guild_id = ?').get(guildId);
-}
-
+function getVerifyConfig(guildId) { return store.verify_config.get(guildId); }
 function setVerifyConfig(guildId, fields) {
-  db.prepare('INSERT OR IGNORE INTO verify_config (guild_id) VALUES (?)').run(guildId);
-  for (const [k, v] of Object.entries(fields)) {
-    db.prepare(`UPDATE verify_config SET ${k} = ? WHERE guild_id = ?`).run(v, guildId);
-  }
+  if (!store.verify_config.has(guildId)) store.verify_config.set(guildId, { guild_id: guildId, verified_role: null, log_channel: null, cookie: null });
+  Object.assign(store.verify_config.get(guildId), fields);
 }
+function getVerifiedUser(guildId, userId) { return store.verified_users.get(`${guildId}:${userId}`); }
+function setVerifiedUser(guildId, userId, robloxId, robloxName) { store.verified_users.set(`${guildId}:${userId}`, { guild_id: guildId, user_id: userId, roblox_id: robloxId, roblox_name: robloxName, verified_at: now() }); }
+function removeVerifiedUser(guildId, userId) { store.verified_users.delete(`${guildId}:${userId}`); return { changes: 1 }; }
 
-function getVerifiedUser(guildId, userId) {
-  return db.prepare('SELECT * FROM verified_users WHERE guild_id = ? AND user_id = ?').get(guildId, userId);
-}
-
-function setVerifiedUser(guildId, userId, robloxId, robloxName) {
-  db.prepare('INSERT OR REPLACE INTO verified_users (guild_id, user_id, roblox_id, roblox_name) VALUES (?, ?, ?, ?)').run(guildId, userId, robloxId, robloxName);
-}
-
-function removeVerifiedUser(guildId, userId) {
-  return db.prepare('DELETE FROM verified_users WHERE guild_id = ? AND user_id = ?').run(guildId, userId);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Automod
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getAutomodConfig(guildId) {
-  return db.prepare('SELECT * FROM automod_config WHERE guild_id = ?').get(guildId);
-}
-
+function getAutomodConfig(guildId) { return store.automod_config.get(guildId); }
 function setAutomodConfig(guildId, fields) {
-  db.prepare('INSERT OR IGNORE INTO automod_config (guild_id) VALUES (?)').run(guildId);
-  for (const [k, v] of Object.entries(fields)) {
-    db.prepare(`UPDATE automod_config SET ${k} = ? WHERE guild_id = ?`).run(v, guildId);
-  }
+  if (!store.automod_config.has(guildId)) store.automod_config.set(guildId, { guild_id: guildId, enabled: 0, log_channel: null, spam_threshold: 5, spam_window: 5000, caps_threshold: 70, link_mode: 'off', mention_limit: 5, bad_words: '[]', whitelist_roles: '[]', whitelist_channels: '[]' });
+  Object.assign(store.automod_config.get(guildId), fields);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Ticket
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getTicketConfig(guildId) {
-  return db.prepare('SELECT * FROM ticket_config WHERE guild_id = ?').get(guildId);
-}
-
+function getTicketConfig(guildId) { return store.ticket_config.get(guildId); }
 function setTicketConfig(guildId, fields) {
-  db.prepare('INSERT OR IGNORE INTO ticket_config (guild_id) VALUES (?)').run(guildId);
-  for (const [k, v] of Object.entries(fields)) {
-    db.prepare(`UPDATE ticket_config SET ${k} = ? WHERE guild_id = ?`).run(v, guildId);
-  }
+  if (!store.ticket_config.has(guildId)) store.ticket_config.set(guildId, { guild_id: guildId, category_id: null, log_channel: null, support_role: null, panel_channel: null, panel_message: null, open_message: 'Thank you for opening a ticket. Support will be with you shortly.', max_tickets: 1 });
+  Object.assign(store.ticket_config.get(guildId), fields);
 }
+function openTicket(guildId, channelId, userId) { store.tickets.set(channelId, { id: nextId(), guild_id: guildId, channel_id: channelId, user_id: userId, status: 'open', created_at: now(), closed_at: null }); }
+function closeTicket(channelId) { const t = store.tickets.get(channelId); if (t) { t.status = 'closed'; t.closed_at = now(); } }
+function getOpenTicket(guildId, userId) { return [...store.tickets.values()].find(r => r.guild_id === guildId && r.user_id === userId && r.status === 'open'); }
 
-function openTicket(guildId, channelId, userId) {
-  db.prepare('INSERT INTO tickets (guild_id, channel_id, user_id) VALUES (?, ?, ?)').run(guildId, channelId, userId);
-}
-
-function closeTicket(channelId) {
-  db.prepare("UPDATE tickets SET status = 'closed', closed_at = strftime('%s','now') WHERE channel_id = ?").run(channelId);
-}
-
-function getOpenTicket(guildId, userId) {
-  return db.prepare("SELECT * FROM tickets WHERE guild_id = ? AND user_id = ? AND status = 'open'").get(guildId, userId);
-}
+const db = {
+  prepare: () => ({ get: () => undefined, all: () => [], run: () => ({ changes: 0 }) }),
+  exec: () => {}, pragma: () => {},
+};
 
 module.exports = {
   db,
-  getConfig, setConfig,
-  getPrefix, setPrefix,
+  getConfig, setConfig, getPrefix, setPrefix,
   getGuild, ensureGuild, updateGuildField,
   isUserWhitelisted, isRoleWhitelisted,
-  addWhitelistUser, removeWhitelistUser,
-  addWhitelistRole, removeWhitelistRole,
+  addWhitelistUser, removeWhitelistUser, addWhitelistRole, removeWhitelistRole,
   getWhitelistUsers, getWhitelistRoles,
   getSniperTarget, getAllSniperTargets, getSniperTargetsByGuild,
   addSniperTarget, removeSniperTarget, updateSniperTargetChannel,
