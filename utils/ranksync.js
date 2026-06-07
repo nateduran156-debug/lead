@@ -1,27 +1,26 @@
-import db from './database.js';
-import { getGuild } from './database.js';
-import { getGroups } from './roblox.js';
+'use strict';
 
-export function getRankSyncMappings(guildId) {
+const { db, getGuild } = require('./database');
+const { getGroups } = require('./roblox');
+
+function getRankSyncMappings(guildId) {
   return db.prepare('SELECT * FROM rank_sync WHERE guild_id = ? ORDER BY min_rank ASC').all(guildId);
 }
 
-export function addRankSyncMapping(guildId, discordRoleId, minRank, robloxRoleName) {
+function addRankSyncMapping(guildId, discordRoleId, minRank, robloxRoleName) {
   db.prepare('INSERT OR REPLACE INTO rank_sync (guild_id, discord_role_id, min_rank, roblox_role_name) VALUES (?, ?, ?, ?)')
     .run(guildId, discordRoleId, minRank, robloxRoleName || null);
 }
 
-export function removeRankSyncMapping(guildId, discordRoleId) {
+function removeRankSyncMapping(guildId, discordRoleId) {
   return db.prepare('DELETE FROM rank_sync WHERE guild_id = ? AND discord_role_id = ?').run(guildId, discordRoleId);
 }
 
-export function getVerifiedMembers(guildId) {
+function getVerifiedMembers(guildId) {
   return db.prepare('SELECT * FROM users WHERE guild_id = ?').all(guildId);
 }
 
-// Sync one member's Discord roles based on their Roblox group rank.
-// Pass null for robloxId to auto-remove all sync roles (user not verified).
-export async function syncMember(guild, member, robloxId) {
+async function syncMember(guild, member, robloxId) {
   const g = getGuild(guild.id);
   if (!g.roblox_group_id) return;
   const mappings = getRankSyncMappings(guild.id);
@@ -44,3 +43,5 @@ export async function syncMember(guild, member, robloxId) {
     if (!qualifies && has) await member.roles.remove(role).catch(() => {});
   }
 }
+
+module.exports = { getRankSyncMappings, addRankSyncMapping, removeRankSyncMapping, getVerifiedMembers, syncMember };
