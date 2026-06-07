@@ -1,19 +1,17 @@
 {
-  "name": "lead-bot",
-  "version": "2.0.0",
-  "description": "Lead Discord Bot",
+  "name": "discord-bot",
+  "version": "1.0.0",
+  "description": "Merged lead + moderation Discord bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {
-    "discord.js": "^14.16.3",
-    "better-sqlite3": "^11.10.0",
-    "axios": "^1.6.8",
-    "dotenv": "^16.4.5"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "axios": "^1.6.0",
+    "better-sqlite3": "^9.4.3",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.1",
+    "ms": "^2.1.3"
   }
 }
