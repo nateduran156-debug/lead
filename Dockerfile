@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y python3 make g++
 
 COPY package.json package-lock.json ./
 
-RUN npm install --omit=dev --legacy-peer-deps --timeout=120000
+RUN npm install --omit=dev
 
 COPY . .
 
