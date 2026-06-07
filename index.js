@@ -1,6 +1,6 @@
 'use strict';
 
-require('dotenv').config();
+try { require('dotenv').config(); } catch {} // optional: only needed for local .env files
 
 const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
 const { loadCommands }  = require('./handlers/commandHandler');
