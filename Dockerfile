@@ -2,7 +2,8 @@ FROM node:18-bullseye
 
 WORKDIR /app
 
-COPY package*.json ./
+# Only copy package.json — no stale lock file
+COPY package.json ./
 
 RUN npm install --omit=dev
 

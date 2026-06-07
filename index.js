@@ -1,22 +1,21 @@
 'use strict';
 
-const { execSync } = require('child_process');
-const fs   = require('fs');
-const path = require('path');
-
-// Safety net: install deps if discord.js is missing
-try {
-  require.resolve('discord.js');
-} catch (_) {
-  console.log('[Start] discord.js not found — running npm install...');
-  try {
-    execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
-    console.log('[Start] Dependencies installed successfully.');
-  } catch (e) {
-    console.error('[Start] npm install failed:', e.message);
-    process.exit(1);
+// Ensure dependencies are installed before anything else loads
+(function bootstrap() {
+  const { execSync } = require('child_process');
+  const path = require('path');
+  const nm = require('path').join(__dirname, 'node_modules', 'discord.js', 'package.json');
+  try { require('fs').statSync(nm); } catch (_) {
+    console.log('[Boot] node_modules missing or incomplete — installing...');
+    try {
+      execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
+      console.log('[Boot] Install complete.');
+    } catch (e) {
+      console.error('[Boot] npm install failed:', e.message);
+      process.exit(1);
+    }
   }
-}
+})();
 
 const fs   = require('fs');
 const path = require('path');
