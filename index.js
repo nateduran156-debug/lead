@@ -5,13 +5,15 @@ const { execSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 
-if (!fs.existsSync(path.join(__dirname, 'node_modules', 'discord.js'))) {
-  console.log('[Start] node_modules missing — running npm install...');
+try {
+  require.resolve('discord.js');
+} catch (_) {
+  console.log('[Start] discord.js not found — running npm install...');
   try {
     execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
     console.log('[Start] Dependencies installed successfully.');
   } catch (e) {
-    console.error('[Start] npm install failed:', e.message);
+    console.error('[Start] npm install failed — ensure python3/make/g++ are available:', e.message);
     process.exit(1);
   }
 }

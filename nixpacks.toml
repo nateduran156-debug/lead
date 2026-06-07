@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python3", "gnumake", "gcc", "nodejs_18"]
+
+[phases.install]
+cmds = ["npm install --omit=dev"]
+
+[start]
+cmd = "node index.js"
