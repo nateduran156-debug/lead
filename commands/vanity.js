@@ -10,7 +10,7 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(sub =>
       sub.setName('add')
-        .setDescription('Register a vanity as an opp vanity to watch')
+        .setDescription('Register a vanity: an opp vanity to watch')
         .addStringOption(opt =>
           opt.setName('vanity').setDescription('The vanity slug (e.g. "example" for discord.gg/example)').setRequired(true)
         )
