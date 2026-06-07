@@ -1,22 +1,25 @@
-import { sendLog } from '../utils/logger.js';
+'use strict';
 
-export const name = 'guildMemberRemove';
+const { sendLog } = require('../utils/logger');
 
-export async function execute(member) {
-  const roles = member.roles?.cache
-    .filter(r => r.id !== member.guild.id)
-    .map(r => `<@&${r.id}>`)
-    .join(' ') || '—';
+module.exports = {
+  name: 'guildMemberRemove',
+  async execute(member) {
+    const roles = member.roles?.cache
+      .filter(r => r.id !== member.guild.id)
+      .map(r => `<@&${r.id}>`)
+      .join(' ') || '—';
 
-  const joinedAt = member.joinedTimestamp
-    ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`
-    : 'unknown';
+    const joinedAt = member.joinedTimestamp
+      ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`
+      : 'unknown';
 
-  await sendLog(member.guild, 'leave', {
-    color: 0xED4245,
-    content: [
-      `🚪 **left** — ${member.user} \`${member.user.username}\``,
-      `-# joined ${joinedAt} · roles: ${roles}`,
-    ].join('\n'),
-  });
-}
+    await sendLog(member.guild, 'leave', {
+      color: 0xED4245,
+      content: [
+        `🚪 **Left** — ${member.user} \`${member.user.username}\``,
+        `-# Joined ${joinedAt} · Roles: ${roles}`,
+      ].join('\n'),
+    });
+  },
+};

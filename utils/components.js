@@ -1,181 +1,123 @@
-const { ButtonStyle } = require('discord.js');
+'use strict';
 
-const CV2_FLAG = 1 << 15;
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ThumbnailBuilder,
+  SectionBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  MessageFlags,
+} = require('discord.js');
+
+const CV2 = MessageFlags.IsComponentsV2;
 
 const COLORS = {
-  success: 0x57F287,
-  error:   0xED4245,
-  warning: 0xFEE75C,
-  info:    0x5865F2,
-  default: 0x2B2D31,
-  white:   0xFFFFFF,
-  black:   0x000000,
-  blurple: 0x5865F2,
-  red:     0xED4245,
-  green:   0x57F287,
-  yellow:  0xFEE75C,
-  grey:    0x4F545C,
+  red:    0xED4245,
+  green:  0x57F287,
+  blue:   0x5865F2,
+  yellow: 0xFEE75C,
+  orange: 0xFF6B35,
+  purple: 0x9B59B6,
+  pink:   0xEB459E,
+  gold:   0xF1C40F,
+  teal:   0x1ABC9C,
+  white:  0xFFFFFF,
+  black:  0x23272A,
+  gray:   0x99AAB5,
 };
 
-function container(components, accentColor = null) {
-  const c = { type: 17, components };
-  if (accentColor !== null) c.accent_color = accentColor;
-  return c;
-}
+const S = (divider = true, size = SeparatorSpacingSize.Small) =>
+  new SeparatorBuilder().setSpacing(size).setDivider(divider);
 
-function textDisplay(content) {
-  return { type: 10, content };
-}
+const C = {
+  container: (color) => new ContainerBuilder().setAccentColor(color ?? COLORS.blue),
+  text:      (content) => new TextDisplayBuilder().setContent(content),
+  sep:       (divider = true) => S(divider),
+  thumbnail: (url) => new ThumbnailBuilder().setURL(url),
+  section:   (textContent, thumbnail) => {
+    const sec = new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(textContent));
+    if (thumbnail) sec.setThumbnailAccessory(thumbnail);
+    return sec;
+  },
+  button:    (label, style, opts = {}) => {
+    const b = new ButtonBuilder().setLabel(label).setStyle(style);
+    if (opts.customId) b.setCustomId(opts.customId);
+    if (opts.url)      b.setURL(opts.url);
+    if (opts.emoji)    b.setEmoji(opts.emoji);
+    if (opts.disabled) b.setDisabled(true);
+    return b;
+  },
+  row:       (...buttons) => new ActionRowBuilder().addComponents(...buttons),
+};
 
-function separator(divider = true, spacing = 1) {
-  return { type: 14, divider, spacing };
-}
+function card({ title, desc, fields, color, footer, image, thumbnail } = {}) {
+  const container = C.container(color ?? COLORS.blue);
 
-function section(textComponents, accessory = null) {
-  const s = { type: 9, components: textComponents };
-  if (accessory) s.accessory = accessory;
-  return s;
-}
-
-function thumbnail(url) {
-  return { type: 11, media: { url } };
-}
-
-function actionRow(components) {
-  return { type: 1, components };
-}
-
-function button(label, customId, style = ButtonStyle.Secondary, disabled = false) {
-  return { type: 2, label, custom_id: customId, style, disabled };
-}
-
-function linkButton(label, url) {
-  return { type: 2, label, url, style: ButtonStyle.Link };
-}
-
-function primaryButton(label, customId, disabled = false) {
-  return button(label, customId, ButtonStyle.Primary, disabled);
-}
-
-function dangerButton(label, customId, disabled = false) {
-  return button(label, customId, ButtonStyle.Danger, disabled);
-}
-
-function successButton(label, customId, disabled = false) {
-  return button(label, customId, ButtonStyle.Success, disabled);
-}
-
-function selectMenu(customId, placeholder, options, minValues = 1, maxValues = 1) {
-  return {
-    type: 3,
-    custom_id: customId,
-    placeholder,
-    min_values: minValues,
-    max_values: maxValues,
-    options,
-  };
-}
-
-function selectOption(label, value, description = null) {
-  const opt = { label, value };
-  if (description) opt.description = description;
-  return opt;
-}
-
-function cv2Reply(components, ephemeral = false) {
-  const payload = { flags: CV2_FLAG, components };
-  if (ephemeral) payload.flags |= 1 << 6;
-  return payload;
-}
-
-function cv2Update(components) {
-  return { flags: CV2_FLAG, components };
-}
-
-function ok(text, ephemeral = false) {
-  return cv2Reply([container([textDisplay(`✅  ${text}`)], COLORS.success)], ephemeral);
-}
-
-function err(text, ephemeral = true) {
-  return cv2Reply([container([textDisplay(`❌  ${text}`)], COLORS.error)], ephemeral);
-}
-
-function warn(text, ephemeral = false) {
-  return cv2Reply([container([textDisplay(`⚠️  ${text}`)], COLORS.warning)], ephemeral);
-}
-
-function loading(text = 'Loading…') {
-  return cv2Reply([container([textDisplay(`⏳  ${text}`)], COLORS.default)]);
-}
-
-function card({ title, desc, fields = [], color = COLORS.info, footer } = {}) {
-  const parts = [];
-  if (title) parts.push(textDisplay(`## ${title}`));
-  if (desc)  parts.push(textDisplay(desc));
-  if (fields.length) {
-    parts.push(separator());
-    for (const f of fields) {
-      parts.push(textDisplay(`**${f.name}**\n${f.value}`));
-    }
+  if (title) {
+    container.addTextDisplayComponents(C.text(`## ${title}`));
+    container.addSeparatorComponents(S());
   }
+
+  if (desc) {
+    container.addTextDisplayComponents(C.text(desc));
+  }
+
+  if (fields?.length) {
+    const lines = fields.map(f => `**${f.name}** ${f.value}`).join('\n');
+    container.addTextDisplayComponents(C.text(lines));
+  }
+
   if (footer) {
-    parts.push(separator());
-    parts.push(textDisplay(`-# ${footer}`));
+    container.addSeparatorComponents(S(false));
+    container.addTextDisplayComponents(C.text(`-# ${footer}`));
   }
-  return cv2Reply([container(parts, color)]);
+
+  return { flags: CV2, components: [container] };
 }
 
-function commandCard({ name, description, syntax, example, aliases = [], color = COLORS.info } = {}) {
-  const lines = [];
-  if (syntax)         lines.push(`Syntax:   ${syntax}`);
-  if (example)        lines.push(`Example:  ${example}`);
-  if (aliases.length) lines.push(`Aliases:  ${aliases.join('  ')}`);
+function ok(content) {
+  const c = C.container(COLORS.green)
+    .addTextDisplayComponents(C.text(`✅ ${content}`));
+  return { flags: CV2, components: [c] };
+}
 
-  const parts = [textDisplay(`**${name}**\n\n${description}`)];
-  if (lines.length) {
-    parts.push(separator());
-    parts.push(textDisplay(`\`\`\`\n${lines.join('\n')}\`\`\``));
+function err(content) {
+  const c = C.container(COLORS.red)
+    .addTextDisplayComponents(C.text(`❌ ${content}`));
+  return { flags: CV2, components: [c] };
+}
+
+function modCard({ action, user, mod, reason, extra = {} }) {
+  let lines = [
+    `## ${action}`,
+    `**user** ${user} \`${user.id}\``,
+    `**moderator** ${mod}`,
+    `**reason** ${reason}`,
+  ];
+
+  for (const [k, v] of Object.entries(extra)) {
+    lines.push(`**${k.toLowerCase()}** ${v}`);
   }
-  return cv2Reply([container(parts, color)]);
+
+  const c = C.container(COLORS.orange)
+    .addTextDisplayComponents(C.text(lines.join('\n')));
+
+  return { flags: CV2, components: [c] };
 }
 
-async function prefixSend(message, components) {
-  return message.reply({ flags: CV2_FLAG, components });
+function profileLinks(robloxId, rootPlaceId) {
+  const buttons = [
+    C.button('Roblox Profile', ButtonStyle.Link, { url: `https://www.roblox.com/users/${robloxId}/profile` }),
+  ];
+  if (rootPlaceId) {
+    buttons.push(C.button('View Game', ButtonStyle.Link, { url: `https://www.roblox.com/games/${rootPlaceId}` }));
+  }
+  return C.row(...buttons);
 }
 
-async function prefixOk(message, text) {
-  return prefixSend(message, [container([textDisplay(`✅  ${text}`)], COLORS.success)]);
-}
-
-async function prefixErr(message, text) {
-  return prefixSend(message, [container([textDisplay(`❌  ${text}`)], COLORS.error)]);
-}
-
-module.exports = {
-  CV2_FLAG,
-  COLORS,
-  container,
-  card,
-  commandCard,
-  ok,
-  err,
-  warn,
-  loading,
-  prefixOk,
-  prefixErr,
-  textDisplay,
-  separator,
-  section,
-  thumbnail,
-  actionRow,
-  button,
-  linkButton,
-  primaryButton,
-  dangerButton,
-  successButton,
-  selectMenu,
-  selectOption,
-  cv2Reply,
-  cv2Update,
-  prefixSend,
-};
+module.exports = { CV2, COLORS, C, S, card, ok, err, modCard, profileLinks };

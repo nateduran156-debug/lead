@@ -1,109 +1,217 @@
+'use strict';
+
 const axios = require('axios');
 
-const BASE   = 'https://api.roblox.com';
-const USERS  = 'https://users.roblox.com';
-const GAMES  = 'https://games.roblox.com';
-const PRESENCE = 'https://presence.roblox.com';
-const GROUPS = 'https://groups.roblox.com';
-const THUMBNAIL = 'https://thumbnails.roblox.com';
+const API = {
+  users:     'https://users.roblox.com/v1',
+  presence:  'https://presence.roblox.com/v1',
+  thumbnails:'https://thumbnails.roblox.com/v1',
+  games:     'https://games.roblox.com/v1',
+  groups:    'https://groups.roblox.com/v1',
+  economy:   'https://economy.roblox.com/v1',
+  friends:   'https://friends.roblox.com/v1',
+  catalog:   'https://catalog.roblox.com/v1',
+  badges:    'https://badges.roblox.com/v1',
+  inventory: 'https://inventory.roblox.com/v1',
+  avatar:    'https://avatar.roblox.com/v1',
+};
 
-function cookie() {
-  return process.env.ROBLOX_COOKIE ? `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}` : '';
-}
-
-async function getUserById(userId) {
-  const res = await axios.get(`${USERS}/v1/users/${userId}`);
+async function get(url, cookie = null) {
+  const headers = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {};
+  const res = await axios.get(url, { headers, timeout: 8000 });
   return res.data;
 }
+
+async function post(url, body, cookie) {
+  const res = await axios.post(url, body, {
+    headers: { Cookie: `.ROBLOSECURITY=${cookie}`, 'Content-Type': 'application/json' },
+    timeout: 8000,
+  });
+  return res.data;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User lookup
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function getUserByUsername(username) {
-  const res = await axios.post(`${USERS}/v1/usernames/users`, {
-    usernames: [username],
-    excludeBannedUsers: false
-  });
-  return res.data.data?.[0] ?? null;
+  const data = await post(`${API.users}/usernames/users`, { usernames: [username], excludeBannedUsers: false }, null);
+  return data.data?.[0] ?? null;
 }
+
+async function getUserById(id) {
+  return get(`${API.users}/users/${id}`);
+}
+
+async function getUsersByIds(ids) {
+  const data = await post(`${API.users}/users`, { userIds: ids, excludeBannedUsers: false }, null);
+  return data.data ?? [];
+}
+
+async function searchUsers(keyword) {
+  const data = await get(`${API.users}/users/search?keyword=${encodeURIComponent(keyword)}&limit=10`);
+  return data.data ?? [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Presence
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function getUserPresence(userIds) {
-  const res = await axios.post(`${PRESENCE}/v1/presence/users`, {
-    userIds
-  }, {
-    headers: { Cookie: cookie() }
-  });
-  return res.data.userPresences ?? [];
+  const data = await post(`${API.presence}/presence/users`, { userIds }, null);
+  return data.userPresences ?? [];
 }
 
-async function getGameDetails(placeId) {
-  try {
-    const universeRes = await axios.get(`${BASE}/universes/get-universe-containing-place?placeId=${placeId}`);
-    const universeId = universeRes.data?.UniverseId;
-    if (!universeId) return null;
-    const gamesRes = await axios.get(`${GAMES}/v1/games?universeIds=${universeId}`);
-    return gamesRes.data?.data?.[0] ?? null;
-  } catch {
-    return null;
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// Thumbnails
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getHeadshot(userId, size = '420x420') {
+  const data = await get(
+    `${API.thumbnails}/users/avatar-headshot?userIds=${userId}&size=${size}&format=Png&isCircular=false`
+  );
+  return data.data?.[0]?.imageUrl ?? null;
 }
+
+async function getAvatarThumbnail(userId, size = '420x420') {
+  const data = await get(
+    `${API.thumbnails}/users/avatar?userIds=${userId}&size=${size}&format=Png`
+  );
+  return data.data?.[0]?.imageUrl ?? null;
+}
+
+async function getGroupIcon(groupId, size = '420x420') {
+  const data = await get(
+    `${API.thumbnails}/groups/icons?groupIds=${groupId}&size=${size}&format=Png`
+  );
+  return data.data?.[0]?.imageUrl ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Games
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getGameInfo(universeId) {
+  const data = await get(`${API.games}/games?universeIds=${universeId}`);
+  return data.data?.[0] ?? null;
+}
+
+async function getUserGames(userId) {
+  const data = await get(`${API.games}/games/list?model.userId=${userId}&model.limit=10`);
+  return data.data ?? [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Groups
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getGroupInfo(groupId) {
+  return get(`${API.groups}/groups/${groupId}`);
+}
+
+async function getGroupMembers(groupId, limit = 10) {
+  const data = await get(`${API.groups}/groups/${groupId}/users?limit=${limit}`);
+  return data.data ?? [];
+}
+
+async function getGroupWall(groupId, limit = 10) {
+  const data = await get(`${API.groups}/groups/${groupId}/wall/posts?limit=${limit}`);
+  return data.data ?? [];
+}
+
+async function getUserGroups(userId) {
+  const data = await get(`${API.groups}/users/${userId}/groups/roles`);
+  return data.data ?? [];
+}
+
+async function getUserRankInGroup(userId, groupId) {
+  const groups = await getUserGroups(userId);
+  return groups.find(g => String(g.group?.id) === String(groupId)) ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Friends
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getUserFriends(userId) {
+  const data = await get(`${API.friends}/users/${userId}/friends`);
+  return data.data ?? [];
+}
+
+async function getFriendCount(userId) {
+  const data = await get(`${API.friends}/users/${userId}/friends/count`);
+  return data.count ?? 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Economy / RAP
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getUserRap(userId) {
+  const data = await get(`${API.economy}/users/${userId}/assets/collectibles?limit=100`);
+  const items = data.data ?? [];
+  return items.reduce((sum, item) => sum + (item.recentAveragePrice || 0), 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catalog
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getCatalogItem(itemId) {
+  return get(`${API.catalog}/catalog/items/details?itemIds=${itemId}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Badges
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getUserBadges(userId) {
+  const data = await get(`${API.badges}/users/${userId}/badges?limit=25&sortOrder=Desc`);
+  return data.data ?? [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Avatar / Outfit
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function getUserAvatar(userId) {
-  try {
-    const res = await axios.get(`${THUMBNAIL}/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`);
-    return res.data?.data?.[0]?.imageUrl ?? null;
-  } catch {
-    return null;
-  }
+  return get(`${API.avatar}/users/${userId}/avatar`);
 }
 
-async function getGroupRoles(groupId) {
-  const res = await axios.get(`${GROUPS}/v1/groups/${groupId}/roles`);
-  return res.data.roles ?? [];
+async function getUserOutfits(userId) {
+  const data = await get(`${API.avatar}/users/${userId}/outfits?page=1&itemsPerPage=10`);
+  return data.data ?? [];
 }
 
-async function setGroupRank(groupId, userId, roleId) {
-  const res = await axios.patch(
-    `${GROUPS}/v1/groups/${groupId}/users/${userId}`,
-    { roleId },
-    { headers: { Cookie: cookie() } }
-  );
-  return res.data;
+// ─────────────────────────────────────────────────────────────────────────────
+// Authenticated helpers (require cookie)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getAuthenticatedUser(cookie) {
+  return get(`${API.users}/users/authenticated`, cookie);
 }
 
-async function removeFromGroup(groupId, userId) {
-  await axios.delete(
-    `${GROUPS}/v1/groups/${groupId}/users/${userId}`,
-    { headers: { Cookie: cookie() } }
-  );
-}
-
-async function getGroupMember(groupId, userId) {
-  try {
-    const res = await axios.get(`${GROUPS}/v1/users/${userId}/groups/roles`);
-    const groups = res.data?.data ?? [];
-    return groups.find(g => String(g.group?.id) === String(groupId)) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function getCsrfToken() {
+async function getCsrfToken(cookie) {
   try {
     await axios.post('https://auth.roblox.com/v2/logout', {}, {
-      headers: { Cookie: cookie() }
+      headers: { Cookie: `.ROBLOSECURITY=${cookie}` },
     });
-  } catch (err) {
-    return err.response?.headers?.['x-csrf-token'] ?? null;
+  } catch (e) {
+    return e.response?.headers?.['x-csrf-token'] ?? null;
   }
+  return null;
 }
 
 module.exports = {
-  getUserById,
-  getUserByUsername,
+  getUserByUsername, getUserById, getUsersByIds, searchUsers,
   getUserPresence,
-  getGameDetails,
-  getUserAvatar,
-  getGroupRoles,
-  setGroupRank,
-  removeFromGroup,
-  getGroupMember,
-  getCsrfToken,
+  getHeadshot, getAvatarThumbnail, getGroupIcon,
+  getGameInfo, getUserGames,
+  getGroupInfo, getGroupMembers, getGroupWall, getUserGroups, getUserRankInGroup,
+  getUserFriends, getFriendCount,
+  getUserRap,
+  getCatalogItem,
+  getUserBadges,
+  getUserAvatar, getUserOutfits,
+  getAuthenticatedUser, getCsrfToken,
 };

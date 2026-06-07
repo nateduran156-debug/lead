@@ -1,14 +1,20 @@
-const logger = require('../utils/logger');
+'use strict';
+
+const { startSniperLoop }    = require('../handlers/sniperHandler');
+const { startGiveawayLoop }  = require('../handlers/giveawayHandler');
+const { startReminderLoop }  = require('../handlers/reminderHandler');
+const { setupAntiNukeListeners } = require('../handlers/antiNuke');
 
 module.exports = {
   name: 'ready',
   once: true,
   execute(client) {
-    logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    logger.info(`  Bot online: ${client.user.tag}`);
-    logger.info(`  ID:         ${client.user.id}`);
-    logger.info(`  Guilds:     ${client.guilds.cache.size}`);
-    logger.info(`  Commands:   ${client.commands.size} slash, ${client.prefixCommands.size} prefix`);
-    logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  }
+    console.log(`[Ready] Logged in as ${client.user.tag}`);
+    client.user.setPresence({ activities: [{ name: 'the server' }], status: 'online' });
+
+    startSniperLoop(client);
+    startGiveawayLoop(client);
+    startReminderLoop(client);
+    setupAntiNukeListeners(client);
+  },
 };

@@ -1,16 +1,19 @@
-import { sendLog } from '../utils/logger.js';
+'use strict';
 
-export const name = 'messageDelete';
+const { sendLog } = require('../utils/logger');
 
-export async function execute(message) {
-  if (!message.guild || message.author?.bot) return;
-  const content = message.content?.slice(0, 800) || '*no text content*';
+module.exports = {
+  name: 'messageDelete',
+  async execute(message) {
+    if (!message.guild || message.author?.bot) return;
+    const content = message.content?.slice(0, 800) || '*No text content*';
 
-  await sendLog(message.guild, 'messages', {
-    color: 0xFF6B35,
-    content: [
-      `🗑️ **message deleted** — ${message.author ?? '*unknown*'} in ${message.channel}`,
-      content,
-    ].join('\n'),
-  });
-}
+    await sendLog(message.guild, 'messages', {
+      color: 0xFF6B35,
+      content: [
+        `🗑️ **Message deleted** — ${message.author ?? '*Unknown*'} in ${message.channel}`,
+        content,
+      ].join('\n'),
+    });
+  },
+};

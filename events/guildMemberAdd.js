@@ -1,54 +1,65 @@
-import { getGuild } from '../utils/database.js';
-import { sendLog } from '../utils/logger.js';
-import { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } from 'discord.js';
+'use strict';
 
-export const name = 'guildMemberAdd';
+const { getGuild, ensureGuild } = require('../utils/database');
+const { sendLog }               = require('../utils/logger');
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  MessageFlags,
+} = require('discord.js');
 
-export async function execute(member, client) {
-  const guild = member.guild;
-  const g = getGuild(guild.id);
+const CV2 = MessageFlags.IsComponentsV2;
 
-  // log join regardless of welcome settings
-  await sendLog(guild, 'join', {
-    color: 0x57F287,
-    content: [
-      `👋 **joined** — ${member.user} \`${member.user.username}\` (member #${guild.memberCount})`,
-      `-# account created <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`,
-    ].join('\n'),
-  });
+module.exports = {
+  name: 'guildMemberAdd',
+  async execute(member, client) {
+    const guild = member.guild;
+    ensureGuild(guild.id);
+    const g = getGuild(guild.id);
 
-  if (!g.welcome_enabled || !g.welcome_channel) return;
+    await sendLog(guild, 'join', {
+      color: 0x57F287,
+      content: [
+        `👋 **Joined** — ${member.user} \`${member.user.username}\` (Member #${guild.memberCount})`,
+        `-# Account created <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`,
+      ].join('\n'),
+    });
 
-  const ch = guild.channels.cache.get(g.welcome_channel);
-  if (!ch) return;
+    if (!g.welcome_enabled || !g.welcome_channel) return;
 
-  // give auto-roles
-  const roles = JSON.parse(g.welcome_roles || '[]');
-  for (const rid of roles) {
-    const role = guild.roles.cache.get(rid);
-    if (role) member.roles.add(role).catch(() => {});
-  }
+    const ch = guild.channels.cache.get(g.welcome_channel);
+    if (!ch) return;
 
-  const msg = (g.welcome_message || 'Welcome {user} to **{server}**!')
-    .replace('{user}', `${member}`)
-    .replace('{username}', member.user.username)
-    .replace('{server}', guild.name)
-    .replace('{membercount}', guild.memberCount);
+    // Give configured auto-roles
+    const roles = JSON.parse(g.welcome_roles || '[]');
+    for (const rid of roles) {
+      const role = guild.roles.cache.get(rid);
+      if (role) member.roles.add(role).catch(() => {});
+    }
 
-  const c = new ContainerBuilder()
-    .setAccentColor(0x57F287)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`## welcome to ${guild.name}!`))
-    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `${msg}\n\n**member** ${member} (${member.user.username})\n**joined as** #${guild.memberCount}\n**account created** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`
-    ));
+    const msg = (g.welcome_message || 'Welcome {user} to **{server}**!')
+      .replace('{user}',        `${member}`)
+      .replace('{username}',    member.user.username)
+      .replace('{server}',      guild.name)
+      .replace('{membercount}', guild.memberCount);
 
-  ch.send({ flags: MessageFlags.IsComponentsV2, components: [c] }).catch(() => {});
+    const c = new ContainerBuilder()
+      .setAccentColor(0x57F287)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Welcome to ${guild.name}!`))
+      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `${msg}\n\n**Member** ${member} (${member.user.username})\n**Joined as** #${guild.memberCount}\n**Account created** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`
+      ));
 
-  if (g.welcome_dm) {
-    const dm = (g.welcome_dm_message || `Welcome to **${guild.name}**!`)
-      .replace('{user}', member.user.username)
-      .replace('{server}', guild.name);
-    member.user.send({ content: dm }).catch(() => {});
-  }
-}
+    ch.send({ flags: CV2, components: [c] }).catch(() => {});
+
+    if (g.welcome_dm) {
+      const dm = (g.welcome_dm_message || `Welcome to **${guild.name}**!`)
+        .replace('{user}',   member.user.username)
+        .replace('{server}', guild.name);
+      member.user.send({ content: dm }).catch(() => {});
+    }
+  },
+};

@@ -1,105 +1,88 @@
-const db = require('../utils/database');
-const { getGuildValue } = require('../utils/database');
-const C = require('../utils/components');
-const logger = require('../utils/logger');
+'use strict';
 
-const INVITE_REGEX = /discord(?:\.gg|app\.com\/invite|\.com\/invite)\/[a-zA-Z0-9\-]+/i;
+const { getAutomodConfig } = require('../utils/database');
+const { sendLog }           = require('../utils/logger');
+
+const spamTracker = new Map(); // userId → [timestamps]
 
 module.exports = {
   name: 'messageCreate',
-  async execute(message, client) {
-    if (message.author.bot) return;
-    if (!message.guild) return;
-    if (!message.member) return;
+  async execute(message) {
+    if (!message.guild || message.author.bot) return;
+    if (message.member?.permissions.has('ManageMessages')) return;
 
-    if (message.member.permissions.has('ManageMessages')) return;
+    const cfg = getAutomodConfig(message.guild.id);
+    if (!cfg?.enabled) return;
 
-    const guildId = message.guild.id;
-    const settings = db.prepare('SELECT * FROM automod_settings WHERE guild_id = ?').get(guildId);
-    if (!settings?.enabled) return;
+    const whitelistRoles    = JSON.parse(cfg.whitelist_roles    || '[]');
+    const whitelistChannels = JSON.parse(cfg.whitelist_channels || '[]');
 
-    const content = message.content.toLowerCase();
-    let violated = false;
-    let reason   = '';
+    if (whitelistChannels.includes(message.channel.id)) return;
+    if (message.member?.roles.cache.some(r => whitelistRoles.includes(r.id))) return;
 
-    if (!violated) {
-      const words = db.prepare('SELECT word FROM automod_words WHERE guild_id = ?').all(guildId);
-      for (const { word } of words) {
-        if (content.includes(word.toLowerCase())) {
-          violated = true;
-          reason   = `Banned word: \`${word}\``;
-          break;
+    const content = message.content;
+    const reasons = [];
+
+    // ── Spam detection ───────────────────────────────────────────────────────
+    const key     = `${message.guild.id}:${message.author.id}`;
+    const now     = Date.now();
+    const window  = cfg.spam_window || 5000;
+    const times   = (spamTracker.get(key) || []).filter(t => now - t < window);
+    times.push(now);
+    spamTracker.set(key, times);
+
+    if (times.length >= (cfg.spam_threshold || 5)) {
+      reasons.push('spam (too many messages in a short period)');
+      spamTracker.set(key, []);
+    }
+
+    // ── Caps detection ───────────────────────────────────────────────────────
+    if (content.length >= 8) {
+      const upper = content.replace(/[^a-zA-Z]/g, '');
+      if (upper.length > 0) {
+        const capPct = (content.replace(/[^A-Z]/g, '').length / upper.length) * 100;
+        if (capPct >= (cfg.caps_threshold || 70)) {
+          reasons.push('excessive capital letters');
         }
       }
     }
 
-    if (!violated && settings.check_invites && INVITE_REGEX.test(message.content)) {
-      violated = true;
-      reason   = 'Discord invite link';
+    // ── Link detection ───────────────────────────────────────────────────────
+    if (cfg.link_mode === 'block' && /https?:\/\/\S+/.test(content)) {
+      reasons.push('links are not permitted in this server');
     }
 
-    if (!violated && settings.check_mentions) {
-      const mentionCount = (message.mentions.users.size ?? 0) + (message.mentions.roles.size ?? 0);
-      if (mentionCount >= settings.mention_threshold) {
-        violated = true;
-        reason   = `Mass mentions (${mentionCount})`;
+    // ── Bad words ────────────────────────────────────────────────────────────
+    const badWords = JSON.parse(cfg.bad_words || '[]');
+    const lower    = content.toLowerCase();
+    for (const word of badWords) {
+      if (lower.includes(word.toLowerCase())) {
+        reasons.push(`prohibited language`);
+        break;
       }
     }
 
-    if (!violated) return;
-
-    try {
-      await message.delete();
-    } catch {}
-
-    await takeAction(message, settings.action, reason, client);
-  }
-};
-
-async function takeAction(message, action, reason, client) {
-  const guildId  = message.guild.id;
-  const member   = message.member;
-  const logChId  = getGuildValue(guildId, 'mod_channel_id') ?? getGuildValue(guildId, 'log_channel_id');
-
-  const alertComponents = [
-    C.container([
-      C.textDisplay(
-        `**Automod** — ${action.charAt(0).toUpperCase() + action.slice(1)}\n\n` +
-        `User: ${message.author} (\`${message.author.tag}\`)\n` +
-        `Reason: ${reason}\n` +
-        `Channel: <#${message.channel.id}>`
-      )
-    ], C.COLORS.error)
-  ];
-
-  try {
-    if (action === 'warn') {
-      await message.channel.send({
-        content: `${message.author}`,
-        flags: C.CV2_FLAG,
-        components: [C.container([C.textDisplay(`Your message was removed — **${reason}**.`)], C.COLORS.warning)],
-      }).then(m => setTimeout(() => m.delete().catch(() => {}), 7000));
-
-    } else if (action === 'timeout') {
-      await member.timeout(10 * 60 * 1000, `Automod: ${reason}`);
-      await message.channel.send({
-        content: `${message.author}`,
-        flags: C.CV2_FLAG,
-        components: [C.container([C.textDisplay(`You have been timed out for 10 minutes — **${reason}**.`)], C.COLORS.error)],
-      }).then(m => setTimeout(() => m.delete().catch(() => {}), 7000));
-
-    } else if (action === 'kick') {
-      await member.kick(`Automod: ${reason}`);
-
-    } else if (action === 'ban') {
-      await member.ban({ reason: `Automod: ${reason}`, deleteMessageSeconds: 86400 });
+    // ── Mention spam ─────────────────────────────────────────────────────────
+    const mentionCount = message.mentions.users.size + message.mentions.roles.size;
+    if (mentionCount >= (cfg.mention_limit || 5)) {
+      reasons.push('excessive mentions');
     }
-  } catch (err) {
-    logger.warn(`Automod action "${action}" failed for ${message.author.tag}: ${err.message}`);
-  }
 
-  if (logChId) {
-    const logCh = message.guild.channels.cache.get(logChId);
-    await logCh?.send({ flags: C.CV2_FLAG, components: alertComponents }).catch(() => {});
-  }
-}
+    if (!reasons.length) return;
+
+    await message.delete().catch(() => {});
+
+    const warn = await message.channel.send({
+      content: `⚠️ ${message.author}, your message was removed — **${reasons[0]}**.`,
+    }).catch(() => null);
+
+    if (warn) setTimeout(() => warn.delete().catch(() => {}), 8000);
+
+    if (cfg.log_channel) {
+      await sendLog(message.guild, 'general', {
+        color: 0xFF6B35,
+        content: `🔧 **AutoMod** removed a message from ${message.author}\n**Reason:** ${reasons.join(', ')}\n**Content:** ${content.slice(0, 200)}`,
+      });
+    }
+  },
+};

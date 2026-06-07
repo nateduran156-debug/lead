@@ -1,20 +1,20 @@
-import { sendLog } from '../utils/logger.js';
+'use strict';
 
-export const name = 'messageUpdate';
+const { sendLog } = require('../utils/logger');
 
-export async function execute(oldMsg, newMsg) {
-  if (!newMsg.guild || newMsg.author?.bot) return;
-  if (oldMsg.content === newMsg.content) return;
+module.exports = {
+  name: 'messageUpdate',
+  async execute(oldMessage, newMessage) {
+    if (!newMessage.guild || newMessage.author?.bot) return;
+    if (oldMessage.content === newMessage.content) return;
 
-  const before = oldMsg.content?.slice(0, 500) || '*unavailable*';
-  const after = newMsg.content?.slice(0, 500) || '*empty*';
-
-  await sendLog(newMsg.guild, 'messages', {
-    color: 0xFEE75C,
-    content: [
-      `✏️ **message edited** — ${newMsg.author} in ${newMsg.channel} [→ jump](${newMsg.url})`,
-      `**Before:** ${before}`,
-      `**After:** ${after}`,
-    ].join('\n'),
-  });
-}
+    await sendLog(newMessage.guild, 'messages', {
+      color: 0xFEE75C,
+      content: [
+        `✏️ **Message edited** — ${newMessage.author} in ${newMessage.channel}`,
+        `**Before:** ${oldMessage.content?.slice(0, 400) || '*empty*'}`,
+        `**After:** ${newMessage.content?.slice(0, 400) || '*empty*'}`,
+      ].join('\n'),
+    });
+  },
+};
