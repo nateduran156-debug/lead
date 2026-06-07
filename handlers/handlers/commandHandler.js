@@ -53,7 +53,16 @@ function loadCommands(client) {
     }
   }
 
-  console.log(`[CommandHandler] Loaded ${client.commands.size} prefix commands and ${client.slashCommands.size} slash commands.`);
+  const slashList   = [...client.slashCommands.keys()].sort();
+  const prefixList  = [...client.commands.keys()].sort();
+
+  console.log(`[CommandHandler] Loaded ${prefixList.length} prefix commands and ${slashList.length} slash commands.`);
+
+  console.log('[CommandHandler] Slash commands:');
+  slashList.forEach(name => console.log(`  /${name}`));
+
+  console.log('[CommandHandler] Prefix commands:');
+  prefixList.forEach(name => console.log(`  !${name}`));
 }
 
 module.exports = { loadCommands };
