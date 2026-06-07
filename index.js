@@ -1,19 +1,10 @@
 'use strict';
 
-// Ensure dependencies are installed before anything else loads
 (function bootstrap() {
-  const { execSync } = require('child_process');
-  const path = require('path');
-  const nm = require('path').join(__dirname, 'node_modules', 'discord.js', 'package.json');
-  try { require('fs').statSync(nm); } catch (_) {
-    console.log('[Boot] node_modules missing or incomplete — installing...');
-    try {
-      execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
-      console.log('[Boot] Install complete.');
-    } catch (e) {
-      console.error('[Boot] npm install failed:', e.message);
-      process.exit(1);
-    }
+  try { require.resolve('discord.js'); } catch (_) {
+    console.log('[Boot] Installing dependencies...');
+    require('child_process').execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
+    console.log('[Boot] Done.');
   }
 })();
 
