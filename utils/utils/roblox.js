@@ -202,12 +202,15 @@ async function getCsrfToken(cookie) {
   return null;
 }
 
+// getGroups: alias for getUserGroups (used by ranksync)
+const getGroups = getUserGroups;
+
 module.exports = {
   getUserByUsername, getUserById, getUsersByIds, searchUsers,
   getUserPresence,
   getHeadshot, getAvatarThumbnail, getGroupIcon,
   getGameInfo, getUserGames,
-  getGroupInfo, getGroupMembers, getGroupWall, getUserGroups, getUserRankInGroup,
+  getGroupInfo, getGroupMembers, getGroupWall, getUserGroups, getUserRankInGroup, getGroups,
   getUserFriends, getFriendCount,
   getUserRap,
   getCatalogItem,
