@@ -1,10 +1,115 @@
 'use strict';
 
-const Database = require('better-sqlite3');
-const path     = require('path');
+const fs        = require('fs');
+const path      = require('path');
+const initSqlJs = require('sql.js');
 
-const db = new Database(path.join(__dirname, '..', 'bot.db'));
-db.pragma('journal_mode = WAL');
+const DB_PATH = path.join(__dirname, '..', 'bot.db');
+
+// ---------------------------------------------------------------------------
+// Synchronous sql.js initialisation for Node.js
+//
+// sql.js ships a pre-compiled WASM binary.  In Node.js the WASM is read from
+// disk synchronously, so the Promise returned by initSqlJs() resolves in the
+// same microtask checkpoint — before any I/O callbacks run.  We capture the
+// resolved value by scheduling the .then() callback first, then draining the
+// microtask queue with a zero-timeout Atomics.wait on a SharedArrayBuffer.
+// ---------------------------------------------------------------------------
+
+function loadSqlJsSync() {
+  let SQL = null;
+  let err = null;
+
+  initSqlJs().then(s => { SQL = s; }).catch(e => { err = e; });
+
+  // Drain the microtask queue.  Atomics.wait(0 ms) yields to microtasks in
+  // Node.js before returning, which is enough for the already-resolved WASM
+  // promise to fire its .then() callback.
+  const sab = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(sab), 0, 0, 0);
+
+  if (err) throw err;
+  if (!SQL) throw new Error('sql.js WASM did not initialise synchronously');
+  return SQL;
+}
+
+const SQL = loadSqlJsSync();
+
+// ---------------------------------------------------------------------------
+// Build a better-sqlite3-compatible synchronous wrapper around sql.js.
+// ---------------------------------------------------------------------------
+function createDatabase(filePath) {
+
+  // Load existing database from disk, or create a new one.
+  let fileBuffer;
+  if (fs.existsSync(filePath)) {
+    fileBuffer = fs.readFileSync(filePath);
+  }
+  const sqlDb = fileBuffer ? new SQL.Database(fileBuffer) : new SQL.Database();
+
+  // Persist the in-memory database to disk after every write.
+  function persist() {
+    const data = sqlDb.export();
+    fs.writeFileSync(filePath, Buffer.from(data));
+  }
+
+  // Determine whether a SQL string is a write operation.
+  function isWrite(sql) {
+    return /^\s*(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|REPLACE)\b/i.test(sql);
+  }
+
+  // Translate sql.js column-array result rows into plain objects.
+  function rowsToObjects(results) {
+    if (!results || results.length === 0) return [];
+    const { columns, values } = results[0];
+    return values.map(row => {
+      const obj = {};
+      columns.forEach((col, i) => { obj[col] = row[i]; });
+      return obj;
+    });
+  }
+
+  // Mimic better-sqlite3's Statement object.
+  function prepare(sql) {
+    return {
+      get(...params) {
+        const flat = params.flat();
+        const results = sqlDb.exec(sql, flat);
+        const rows = rowsToObjects(results);
+        return rows[0] || undefined;
+      },
+      all(...params) {
+        const flat = params.flat();
+        const results = sqlDb.exec(sql, flat);
+        return rowsToObjects(results);
+      },
+      run(...params) {
+        const flat = params.flat();
+        sqlDb.run(sql, flat);
+        if (isWrite(sql)) persist();
+        return { changes: sqlDb.getRowsModified() };
+      },
+    };
+  }
+
+  // Mimic better-sqlite3's db.exec().
+  function exec(sql) {
+    sqlDb.exec(sql);
+    persist();
+  }
+
+  // Mimic better-sqlite3's db.pragma() — only WAL mode is used in this file,
+  // which sql.js does not support (it's an in-memory/file engine), so we
+  // silently ignore pragma calls.
+  function pragma(_statement) {
+    // no-op: sql.js does not support WAL mode; persistence is handled via
+    // explicit fs.writeFileSync calls after every write instead.
+  }
+
+  return { prepare, exec, pragma };
+}
+
+const db = createDatabase(DB_PATH);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schema
