@@ -1,105 +1,151 @@
-const db = require('../utils/database');
-const roblox = require('../utils/roblox');
-const C = require('../utils/components');
-const logger = require('../utils/logger');
+'use strict';
 
-const POLL_INTERVAL_MS = 30_000;
+const { getAllSniperTargets }                              = require('../utils/database');
+const { getUserPresence, getHeadshot, getGameInfo }       = require('../utils/roblox');
+const { CV2, COLORS, C }                                   = require('../utils/components');
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ThumbnailBuilder,
+  SectionBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+} = require('discord.js');
 
-async function checkTargets(client) {
-  const targets = db.prepare('SELECT * FROM sniper_targets').all();
-  if (targets.length === 0) return;
+const presenceCache = new Map(); // roblox_id → last known presence type
 
-  const byGuild = {};
-  for (const t of targets) {
-    if (!byGuild[t.guild_id]) byGuild[t.guild_id] = [];
-    byGuild[t.guild_id].push(t);
+const S = (divider = true) =>
+  new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(divider);
+
+function startSniperLoop(client) {
+  setInterval(() => runSniperCheck(client), 30_000);
+  console.log('[Sniper] Username sniper started — checking every 30 seconds.');
+}
+
+async function runSniperCheck(client) {
+  const targets = getAllSniperTargets();
+  if (!targets.length) return;
+
+  const uniqueIds = [...new Set(targets.map(t => t.roblox_id).filter(Boolean))];
+  if (!uniqueIds.length) return;
+
+  let presences;
+  try {
+    presences = await getUserPresence(uniqueIds.map(Number));
+  } catch {
+    return;
   }
 
-  for (const [guildId, guildTargets] of Object.entries(byGuild)) {
-    const settings = db.prepare('SELECT * FROM sniper_settings WHERE guild_id = ?').get(guildId);
-    if (!settings?.channel_id) continue;
+  for (const presence of presences) {
+    const userId  = String(presence.userId);
+    const prev    = presenceCache.get(userId);
+    const isOnline = presence.userPresenceType >= 1;
 
-    const channel = client.channels.cache.get(settings.channel_id);
-    if (!channel) continue;
-
-    const robloxIds = guildTargets.map(t => Number(t.roblox_id));
-
-    let presences;
-    try {
-      presences = await roblox.getUserPresence(robloxIds);
-    } catch (err) {
-      logger.warn(`Sniper: failed to fetch presences for guild ${guildId}: ${err.message}`);
-      continue;
-    }
-
-    for (const presence of presences) {
-      const target = guildTargets.find(t => String(t.roblox_id) === String(presence.userId));
-      if (!target) continue;
-
-      if (presence.userPresenceType !== 2) {
-        if (target.last_game_id !== null) {
-          db.prepare('UPDATE sniper_targets SET last_game_id = NULL, last_game_instance_id = NULL WHERE roblox_id = ? AND guild_id = ?')
-            .run(target.roblox_id, guildId);
-        }
-        continue;
+    if (isOnline && !prev) {
+      presenceCache.set(userId, presence);
+      const relTargets = targets.filter(t => t.roblox_id === userId);
+      for (const target of relTargets) {
+        await notifySniper(client, target, presence);
       }
-
-      const samePlace    = String(target.last_game_id) === String(presence.placeId);
-      const sameInstance = String(target.last_game_instance_id) === String(presence.gameId);
-
-      if (samePlace && sameInstance) continue;
-
-      db.prepare('UPDATE sniper_targets SET last_game_id = ?, last_game_instance_id = ? WHERE roblox_id = ? AND guild_id = ?')
-        .run(String(presence.placeId), String(presence.gameId ?? ''), target.roblox_id, guildId);
-
-      let gameName = presence.lastLocation ?? 'Unknown Game';
-      try {
-        const game = await roblox.getGameDetails(presence.placeId);
-        if (game?.name) gameName = game.name;
-      } catch {}
-
-      let avatarUrl = null;
-      try {
-        avatarUrl = await roblox.getUserAvatar(target.roblox_id);
-      } catch {}
-
-      const label = target.roblox_username ?? target.roblox_id;
-      const bodyText =
-        `**${label}** is now in a game\n\n` +
-        `Game: **${gameName}**\n` +
-        `Roblox ID: \`${target.roblox_id}\`` +
-        (target.discord_user_id ? `\nDiscord: <@${target.discord_user_id}>` : '');
-
-      const innerComponents = avatarUrl
-        ? [C.section([C.textDisplay(bodyText)], C.thumbnail(avatarUrl))]
-        : [C.textDisplay(bodyText)];
-
-      const components = [
-        C.container(
-          [
-            ...innerComponents,
-            C.separator(),
-            C.actionRow([
-              C.linkButton('Join Server', target.server_link),
-              C.primaryButton('Copy Roblox ID', `copy_roblox_id:${target.roblox_id}`),
-            ]),
-          ],
-          C.COLORS.error
-        ),
-      ];
-
-      try {
-        await channel.send({ flags: C.CV2_FLAG, components });
-      } catch (err) {
-        logger.warn(`Sniper: failed to send alert for ${target.roblox_id}: ${err.message}`);
-      }
+    } else if (!isOnline && prev) {
+      presenceCache.delete(userId);
     }
   }
 }
 
-module.exports = (client) => {
-  logger.info('Sniper handler started');
-  setInterval(() => {
-    checkTargets(client).catch(err => logger.error('Sniper handler error:', err.message));
-  }, POLL_INTERVAL_MS);
-};
+async function notifySniper(client, target, presence) {
+  try {
+    const channel = await client.channels.fetch(target.channel_id).catch(() => null);
+    if (!channel) return;
+
+    const headshotUrl = await getHeadshot(target.roblox_id).catch(() => null);
+    let gameInfo = null;
+    if (presence.universeId) {
+      gameInfo = await getGameInfo(presence.universeId).catch(() => null);
+    }
+
+    // ── Build alert embed (Components V2) ──────────────────────────────────
+
+    const statusLine = presenceText(presence, gameInfo);
+
+    // Section with thumbnail (avatar top-right)
+    const sectionText = [
+      `## 🎯 ${target.roblox_username} is online`,
+      `**status** ${statusLine}`,
+      gameInfo ? `**game** ${gameInfo.name}` : null,
+    ].filter(Boolean).join('\n');
+
+    const thumbnail = headshotUrl
+      ? new ThumbnailBuilder().setURL(headshotUrl)
+      : null;
+
+    const section = new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionText));
+    if (thumbnail) section.setThumbnailAccessory(thumbnail);
+
+    const container = new ContainerBuilder()
+      .setAccentColor(COLORS.purple)
+      .addSectionComponents(section)
+      .addSeparatorComponents(S())
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**roblox id** \`${target.roblox_id}\``
+        )
+      )
+      .addSeparatorComponents(S(false))
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`-# <t:${Math.floor(Date.now() / 1000)}:T>`)
+      );
+
+    // ── Buttons ─────────────────────────────────────────────────────────────
+
+    const buttons = [];
+
+    // "Join Server" button → Discord invite link for the configured server
+    if (target.server_link) {
+      buttons.push(
+        new ButtonBuilder()
+          .setLabel('Join Server')
+          .setStyle(ButtonStyle.Link)
+          .setURL(target.server_link)
+      );
+    }
+
+    // Roblox profile link
+    buttons.push(
+      new ButtonBuilder()
+        .setLabel('Roblox Profile')
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://www.roblox.com/users/${target.roblox_id}/profile`)
+    );
+
+    const components = [container];
+    if (buttons.length) {
+      components.push(new ActionRowBuilder().addComponents(...buttons));
+    }
+
+    const content = target.notify_role ? `<@&${target.notify_role}>` : null;
+
+    await channel.send({
+      content,
+      flags: require('discord.js').MessageFlags.IsComponentsV2,
+      components,
+    });
+  } catch (e) {
+    console.error(`[Sniper] Notification error for ${target.roblox_username}: ${e.message}`);
+  }
+}
+
+function presenceText(p, gameInfo) {
+  switch (p.userPresenceType) {
+    case 1: return '🌐 On Website';
+    case 2: return `🎮 In Game${gameInfo ? ` — ${gameInfo.name}` : (p.lastLocation ? ` — ${p.lastLocation}` : '')}`;
+    case 3: return `🔧 In Studio${p.lastLocation ? ` — ${p.lastLocation}` : ''}`;
+    default: return '🔴 Offline';
+  }
+}
+
+module.exports = { startSniperLoop };

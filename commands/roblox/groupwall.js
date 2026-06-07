@@ -1,40 +1,36 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getGuild } from '../../utils/database.js';
-import { getGroupWall } from '../../utils/roblox.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('groupwall')
-  .setDescription('view recent group wall posts')
-  .addStringOption(o => o.setName('groupid').setDescription('group id (default: server group)'));
+const { card, err, COLORS } = require('../../utils/components');
+const { getGroupWall }       = require('../../utils/roblox');
 
-export const aliases = ['gw2', 'wall'];
-export const usage = '!groupwall [groupid]';
+const category   = 'roblox';
+const prefixName = 'groupwall';
+const aliases    = ['gwall', 'wall'];
 
-export async function execute(interaction) {
-  const guildData = getGuild(interaction.guild.id);
-  const groupId = interaction.options.getString('groupid') || guildData.roblox_group_id;
-  if (!groupId) return interaction.reply(err('provide a group id or set one with `/setgroup`'));
-  await interaction.deferReply();
-  const posts = await getGroupWall(groupId).catch(() => null);
-  if (!posts?.length) return interaction.editReply(err('no wall posts found'));
-  await interaction.editReply(card({
-    title: 'group wall',
-    desc: posts.slice(0, 10).map(p => `**${p.poster?.user?.username ?? 'Unknown'}** — ${p.body?.slice(0, 150) ?? ''}`).join('\n\n'),
-    color: COLORS.roblox,
-    footer: `group ${groupId}`,
+async function prefixExecute(message, args) {
+  const groupId = args[0];
+  if (!groupId) return message.reply(err('Provide a Roblox group ID.'));
+
+  await message.channel.sendTyping().catch(() => {});
+
+  let posts;
+  try {
+    posts = await getGroupWall(groupId, 5);
+  } catch {
+    return message.reply(err('Failed to retrieve the group wall.'));
+  }
+
+  if (!posts.length) return message.reply(err('The group wall is empty or this group does not have a public wall.'));
+
+  const lines = posts.map((p, i) =>
+    `**${i + 1}.** **${p.poster?.user?.username ?? 'Unknown'}** — ${p.body?.slice(0, 120) ?? '*(no content)*'}`
+  );
+
+  return message.reply(card({
+    title: `Group Wall — ${groupId}`,
+    desc:  lines.join('\n\n'),
+    color: COLORS.teal,
   }));
 }
 
-export async function prefixExecute(message, args) {
-  const guildData = getGuild(message.guild.id);
-  const groupId = args[0] || guildData.roblox_group_id;
-  if (!groupId) return message.reply(err('provide a group id'));
-  const posts = await getGroupWall(groupId).catch(() => null);
-  if (!posts?.length) return message.reply(err('no wall posts found'));
-  await message.reply(card({
-    title: 'group wall',
-    desc: posts.slice(0, 5).map(p => `**${p.poster?.user?.username ?? '?'}** — ${p.body?.slice(0, 100)}`).join('\n\n'),
-    color: COLORS.roblox,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

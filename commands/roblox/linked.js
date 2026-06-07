@@ -1,34 +1,24 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getUser as getDBUser } from '../../utils/database.js';
-import { getUser } from '../../utils/roblox.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('linked')
-  .setDescription('check what roblox account is linked to a discord user')
-  .addUserOption(o => o.setName('user').setDescription('user to check (default: yourself)'));
+const { card, err, COLORS }  = require('../../utils/components');
+const { getVerifiedUser }     = require('../../utils/database');
 
-export const aliases = ['whois', 'robloxof'];
-export const usage = '!linked [@user]';
+const category   = 'roblox';
+const prefixName = 'linked';
+const aliases    = ['myaccount', 'whoami'];
 
-export async function execute(interaction) {
-  const target = interaction.options.getUser('user') || interaction.user;
-  const linked = getDBUser(target.id, interaction.guild.id);
-  if (!linked) return interaction.reply(err(`${target.username} has no linked roblox account`));
-  await interaction.reply(card({
-    title: `${target.username}'s roblox`,
-    desc: `**roblox** [${linked.roblox_username}](https://www.roblox.com/users/${linked.roblox_id}/profile)\n**id** \`${linked.roblox_id}\``,
-    color: COLORS.roblox,
-  }));
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   const target = message.mentions.users.first() || message.author;
-  const linked = getDBUser(target.id, message.guild.id);
-  if (!linked) return message.reply(err(`${target.username} has no linked account`));
-  await message.reply(card({
-    title: `${target.username}'s roblox`,
-    desc: `[${linked.roblox_username}](https://www.roblox.com/users/${linked.roblox_id}/profile) — \`${linked.roblox_id}\``,
-    color: COLORS.roblox,
+  const linked = getVerifiedUser(message.guild.id, target.id);
+
+  if (!linked) return message.reply(err(`${target.username} has no linked Roblox account.`));
+
+  return message.reply(card({
+    title:  `${target.username}'s Linked Account`,
+    desc:   `**Username** ${linked.roblox_name}\n**ID** \`${linked.roblox_id}\`\n**Verified** <t:${linked.verified_at}:R>`,
+    color:  COLORS.green,
+    footer: `https://www.roblox.com/users/${linked.roblox_id}/profile`,
   }));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

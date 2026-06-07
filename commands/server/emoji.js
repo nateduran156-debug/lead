@@ -1,33 +1,23 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('emoji')
-  .setDescription('list server emojis');
+const { card, err, COLORS } = require('../../utils/components');
 
-export const aliases = ['emojis', 'emotes'];
-export const usage = '!emoji';
+const category   = 'server';
+const prefixName = 'emoji';
+const aliases    = ['emotes', 'emojis', 'emojilist'];
 
-export async function execute(interaction) {
-  const emojis = interaction.guild.emojis.cache;
-  const animated = emojis.filter(e => e.animated);
-  const staticE = emojis.filter(e => !e.animated);
-  await interaction.reply(card({
-    title: `${interaction.guild.name} emojis`,
-    fields: [
-      { name: 'Static', value: staticE.size ? staticE.map(e => `${e}`).slice(0, 30).join('') || '0' : '0', inline: false },
-      { name: 'Animated', value: animated.size ? animated.map(e => `${e}`).slice(0, 30).join('') || '0' : '0', inline: false },
-      { name: 'Total', value: `${emojis.size} / 100`, inline: true },
-    ],
-    color: COLORS.blue,
-  }));
-}
-
-export async function prefixExecute(message) {
+async function prefixExecute(message) {
   const emojis = message.guild.emojis.cache;
-  await message.reply(card({
-    title: `${message.guild.name} emojis — ${emojis.size}`,
-    desc: emojis.map(e => `${e}`).slice(0, 30).join('') || 'none',
-    color: COLORS.blue,
+  if (!emojis.size) return message.reply(err('This server has no custom emojis.'));
+
+  const list = emojis.map(e => `${e} \`${e.name}\``).slice(0, 30).join(' ');
+
+  return message.reply(card({
+    title:  `${message.guild.name} — Emojis`,
+    desc:   list + (emojis.size > 30 ? `\n*…and ${emojis.size - 30} more*` : ''),
+    color:  COLORS.blue,
+    footer: `${emojis.size} emoji${emojis.size === 1 ? '' : 's'}`,
   }));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

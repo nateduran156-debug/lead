@@ -1,58 +1,47 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err, card, COLORS } from '../../utils/components.js';
-import { getRankRoles, addRankRole, removeRankRole } from '../../utils/rankroles.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('rankroles')
-  .setDescription('auto-assign roles when rank point thresholds are reached')
-  .addSubcommand(s => s
-    .setName('add')
-    .setDescription('assign a role when a user reaches a rank point threshold')
-    .addRoleOption(o => o.setName('role').setDescription('role to assign').setRequired(true))
-    .addIntegerOption(o => o.setName('threshold').setDescription('rank points required').setRequired(true).setMinValue(1)))
-  .addSubcommand(s => s
-    .setName('remove')
-    .setDescription('remove a rank role threshold')
-    .addRoleOption(o => o.setName('role').setDescription('role to remove').setRequired(true)))
-  .addSubcommand(s => s
-    .setName('list')
-    .setDescription('view all rank role thresholds'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
+const { getRankRoles, addRankRole, removeRankRole } = require('../../utils/rankroles');
+const { ok, err, card, COLORS }                     = require('../../utils/components');
+const { PermissionFlagsBits }                        = require('discord.js');
 
-export const aliases = ['rankrole'];
-export const usage = '!rankroles list';
+const category   = 'misc';
+const prefixName = 'rankroles';
+const aliases    = ['rankrole', 'rr'];
 
-function listCard(guildId) {
+function listPayload(guildId) {
   const roles = getRankRoles(guildId);
-  if (!roles.length) return err('no rank roles configured — use `/rankroles add`');
+  if (!roles.length) return err('No rank roles configured. Use `.rankroles add @role <threshold>` to add one.');
   return card({
-    title: '⭐ rank roles',
-    desc: roles.map(r => `<@&${r.role_id}> — **${r.threshold}** pts`).join('\n'),
+    title: '⭐ Rank Roles',
+    desc:  roles.map(r => `<@&${r.role_id}> — **${r.threshold}** points`).join('\n'),
     color: COLORS.gold,
   });
 }
 
-export async function execute(interaction) {
-  const sub = interaction.options.getSubcommand();
-  const guildId = interaction.guild.id;
+async function prefixExecute(message, args) {
+  if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild))
+    return message.reply(err('You need the **Manage Server** permission to configure rank roles.'));
+
+  const guildId = message.guild.id;
+  const sub     = args[0]?.toLowerCase();
 
   if (sub === 'add') {
-    const role = interaction.options.getRole('role');
-    const threshold = interaction.options.getInteger('threshold');
+    const role      = message.mentions.roles.first();
+    const threshold = parseInt(args[2]);
+    if (!role || isNaN(threshold)) return message.reply(err('Usage: `.rankroles add @role <threshold>`'));
     addRankRole(guildId, role.id, threshold);
-    return interaction.reply(ok(`${role} will be auto-given at **${threshold}** rank pts`));
+    return message.reply(ok(`${role} will be automatically assigned when a member reaches **${threshold}** rank points.`));
   }
 
-  if (sub === 'remove') {
-    const role = interaction.options.getRole('role');
+  if (sub === 'remove' || sub === 'delete') {
+    const role = message.mentions.roles.first();
+    if (!role) return message.reply(err('Mention a role to remove.'));
     const res = removeRankRole(guildId, role.id);
-    if (!res.changes) return interaction.reply(err(`${role} has no threshold configured`));
-    return interaction.reply(ok(`removed rank role threshold for ${role}`));
+    if (!res.changes) return message.reply(err(`${role} has no configured rank threshold.`));
+    return message.reply(ok(`Rank role threshold removed for ${role}.`));
   }
 
-  return interaction.reply(listCard(guildId));
+  return message.reply(listPayload(guildId));
 }
 
-export async function prefixExecute(message) {
-  return message.reply(listCard(message.guild.id));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

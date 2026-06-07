@@ -1,21 +1,27 @@
-import db, { getGiveaway, updateGiveaway } from '../utils/database.js';
-import { ContainerBuilder, TextDisplayBuilder, MessageFlags } from 'discord.js';
+'use strict';
 
-export function startGiveawayLoop(client) {
-  setInterval(() => checkGiveaways(client), 15000);
+const { db, getGiveaway, updateGiveaway }         = require('../utils/database');
+const { ContainerBuilder, TextDisplayBuilder, MessageFlags } = require('discord.js');
+
+const CV2 = MessageFlags.IsComponentsV2;
+
+function startGiveawayLoop(client) {
+  setInterval(() => checkGiveaways(client), 15_000);
 }
 
 async function checkGiveaways(client) {
-  const now = Math.floor(Date.now() / 1000);
+  const now     = Math.floor(Date.now() / 1000);
   const expired = db.prepare("SELECT * FROM giveaways WHERE status = 'active' AND ends_at <= ?").all(now);
-  for (const gw of expired) await endGiveaway(client, gw);
+  for (const gw of expired) {
+    await endGiveaway(client, gw);
+  }
 }
 
-export async function endGiveaway(client, giveaway) {
+async function endGiveaway(client, giveaway) {
   updateGiveaway(giveaway.id, { status: 'ended', ended_at: Math.floor(Date.now() / 1000) });
 
   const entries = JSON.parse(giveaway.entries || '[]');
-  const count = Math.min(giveaway.winners, entries.length);
+  const count   = Math.min(giveaway.winners, entries.length);
   const winners = [...entries].sort(() => Math.random() - 0.5).slice(0, count);
   updateGiveaway(giveaway.id, { winner_ids: JSON.stringify(winners) });
 
@@ -26,20 +32,26 @@ export async function endGiveaway(client, giveaway) {
     if (giveaway.message_id) {
       const msg = await ch.messages.fetch(giveaway.message_id).catch(() => null);
       if (msg) {
-        const c = new ContainerBuilder()
-          .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-            `## 🎉 giveaway ended — ${giveaway.prize}\n` +
-            (winners.length ? `**winners** ${winners.map(w => `<@${w}>`).join(', ')}` : 'no valid entries')
-          ));
-        await msg.edit({ flags: MessageFlags.IsComponentsV2, components: [c] }).catch(() => {});
+        const c = new ContainerBuilder().addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            `## 🎉 Giveaway ended — ${giveaway.prize}\n` +
+            (winners.length
+              ? `**Winners:** ${winners.map(w => `<@${w}>`).join(', ')}`
+              : 'No valid entries were recorded.')
+          )
+        );
+        await msg.edit({ flags: CV2, components: [c] }).catch(() => {});
       }
     }
 
     const text = winners.length
-      ? `🎉 congrats ${winners.map(w => `<@${w}>`).join(', ')}! you won **${giveaway.prize}**`
-      : `😔 nobody entered the **${giveaway.prize}** giveaway`;
+      ? `🎉 Congratulations ${winners.map(w => `<@${w}>`).join(', ')}! You won **${giveaway.prize}**.`
+      : `😔 Nobody entered the **${giveaway.prize}** giveaway.`;
+
     await ch.send({ content: text });
   } catch (e) {
-    console.error('giveaway end error:', e.message);
+    console.error(`[Giveaway] End error: ${e.message}`);
   }
 }
+
+module.exports = { startGiveawayLoop, endGiveaway };

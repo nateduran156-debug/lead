@@ -1,122 +1,93 @@
-const { SlashCommandBuilder } = require('discord.js');
+'use strict';
+
+const { card, COLORS, CV2 } = require('../utils/components');
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+} = require('discord.js');
 const { getPrefix } = require('../utils/database');
-const C = require('../utils/components');
 
-const CATEGORIES = [
-  { name: 'Whitelist',      count: 5,  key: 'whitelist' },
-  { name: 'Vanity Tracker', count: 6,  key: 'vanity' },
-  { name: 'Roblox Sniper',  count: 4,  key: 'sniper' },
-  { name: 'Roblox Tags',    count: 2,  key: 'tags' },
-  { name: 'Verification',   count: 1,  key: 'verify' },
-  { name: 'Tickets',        count: 1,  key: 'tickets' },
-  { name: 'AutoMod',        count: 8,  key: 'automod' },
-  { name: 'Config',         count: 5,  key: 'config' },
-  { name: 'Bot',            count: 2,  key: 'bot' },
-];
+const category   = 'all';
+const prefixName = 'help';
+const aliases    = ['h', 'commands'];
 
-const TOTAL = CATEGORIES.reduce((n, c) => n + c.count, 0);
+const S = (d = true) => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(d);
 
-const CATEGORY_DETAILS = {
-  whitelist: {
-    name: 'whitelist',
-    description: 'Manage the bot whitelist. Controls who can use each category of commands.',
-    syntax: `.whitelist <add|remove|role|removerole|list> [user/role] [category]`,
-    example: `.whitelist add @user sniper`,
-    aliases: ['wl'],
-  },
-  vanity: {
-    name: 'vanity',
-    description: 'Manage opp vanity watching.',
-    syntax: `.vanity <add|remove|list|setchannel|pingrole|toggle>`,
-    example: `.vanity add discord.gg/example`,
-    aliases: ['v'],
-  },
-  sniper: {
-    name: 'sniper',
-    description: 'Track Roblox users and get alerted when they join a game.',
-    syntax: `.sniper <add|remove|list|setchannel>`,
-    example: `.sniper add builderman https://discord.gg/example`,
-    aliases: ['s'],
-  },
-  tags: {
-    name: 'tag / striptag',
-    description: 'Give or remove Roblox group tags.\n\nAvailable tags: `164 tag`, `KITTY TAG`, `lurk tag`, `AMOR TAG`, `YinYang`',
-    syntax: `.tag <roblox_user> <tag>`,
-    example: `.tag builderman KITTY TAG`,
-    aliases: ['strip'],
-  },
-  verify: {
-    name: 'verify',
-    description: 'Link your Roblox account to your Discord account.',
-    syntax: `.verify <roblox_username>`,
-    example: `.verify builderman`,
-    aliases: [],
-  },
-  tickets: {
-    name: 'setupticket',
-    description: 'Set up a ticket panel in this channel.',
-    syntax: `.setupticket <verification|tag> [#log_channel]`,
-    example: `.setupticket verification #ticket-logs`,
-    aliases: ['sticket', 'st'],
-  },
-  automod: {
-    name: 'automod',
-    description: 'Configure automatic moderation for this server.',
-    syntax: `.automod <enable|disable|list|addword|removeword|invites|mentions|action>`,
-    example: `.automod addword badword`,
-    aliases: ['am'],
-  },
-  config: {
-    name: 'config',
-    description: 'View or update server configuration.',
-    syntax: `.config <view|verifiedrole|logchannel|modchannel|muterole> [value]`,
-    example: `.config verifiedrole @Verified`,
-    aliases: ['cfg'],
-  },
-  bot: {
-    name: 'setprefix',
-    description: 'Change the bot prefix for this server.',
-    syntax: `.setprefix <prefix>`,
-    example: `.setprefix !`,
-    aliases: ['prefix'],
-  },
+const COMMAND_LIST = {
+  '⚙️ Core': [
+    '`wl` — manage the whitelist',
+    '`sniper` — manage Roblox username sniper targets',
+    '`tag` — create and use custom tags',
+    '`verify` — link your Roblox account',
+    '`setprefix` — change the bot prefix',
+    '`setcookie` — store the Roblox cookie',
+    '`setupticket` — configure the ticket system',
+    '`automod` — configure AutoMod',
+    '`help` — display this message',
+  ],
+  '🔨 Moderation': [
+    '`ban`, `kick`, `warn`, `unban`, `softban`, `tempban`, `massban`',
+    '`timeout`, `purge`, `nick`, `note`, `history`, `warnings`, `clearwarns`',
+    '`lock`, `lockall`, `unlock`, `unlockall`, `nuke`',
+    '`deafen`, `undeafen`, `move`, `slowmode`',
+    '`addrole`, `removerole`, `roleall`, `unroleall`',
+    '`createchannel`, `deletechannel`, `createrole`, `deleterole`, `clonechannel`',
+  ],
+  '📊 Server Info': [
+    '`serverinfo`, `userinfo`, `avatar`, `banner`',
+    '`roleinfo`, `channelinfo`, `roles`, `channels`, `emoji`',
+    '`boosters`, `bots`, `humans`, `membercount`, `invites`',
+  ],
+  '🎮 Roblox': [
+    '`roblox` — look up a Roblox user',
+    '`presence` — check online status',
+    '`groupinfo`, `groupcheck`, `groupwall`',
+    '`friends`, `badges`, `games`, `outfit`, `rap`, `linked`',
+  ],
+  '🎁 Giveaway': [
+    '`giveaway start/end/list` — manage giveaways',
+  ],
+  '👋 Welcome': [
+    '`welcome` — configure welcome messages and auto-roles',
+  ],
+  '📋 Logging': [
+    '`setlogs` — configure log channels',
+  ],
+  '🛡️ AntiNuke': [
+    '`antinuke` — configure the AntiNuke protection system',
+  ],
+  '⚔️ Raid Points': [
+    '`raidpoints add/remove/check/top/reset/transfer/season`',
+  ],
+  '🎲 Misc': [
+    '`ping`, `botinfo`',
+    '`alias` — manage custom command shortcuts',
+    '`autoresponder` — manage auto-reply triggers',
+    '`rankroles` — manage rank-point role thresholds',
+  ],
 };
 
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Show all available commands'),
+async function prefixExecute(message, args) {
+  const prefix = getPrefix(message.guild?.id || '0');
+  const c      = new ContainerBuilder().setAccentColor(COLORS.blue);
 
-  prefix: { name: 'help', aliases: ['h', '?'] },
-  usage: 'help [category]',
+  c.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Command Reference — prefix: \`${prefix}\``));
 
-  async execute(interaction) {
-    const prefix = getPrefix(interaction.guild.id);
-    return interaction.reply(C.cv2Reply([buildOverview(prefix)], true));
-  },
-
-  async prefixExecute(message, args) {
-    const prefix = getPrefix(message.guild.id);
-    const cat = (args[0] ?? '').toLowerCase();
-
-    if (cat && CATEGORY_DETAILS[cat]) {
-      return message.reply(C.commandCard({ ...CATEGORY_DETAILS[cat] }));
-    }
-
-    return C.prefixSend(message, [buildOverview(prefix)]);
+  for (const [section, lines] of Object.entries(COMMAND_LIST)) {
+    c.addSeparatorComponents(S())
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        `**${section}**\n${lines.join('\n')}`
+      ));
   }
-};
 
-function buildOverview(prefix) {
-  const lines = CATEGORIES.map(c =>
-    `**${c.name}** — ${c.count} command${c.count === 1 ? '' : 's'}`
-  ).join('\n');
+  c.addSeparatorComponents(S(false))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      `-# Only whitelisted users may use the bot. Use \`${prefix}wl\` to manage access.`
+    ));
 
-  return C.container([
-    C.textDisplay(`**Commands**\n-# use \`${prefix}help <category>\` to view commands`),
-    C.separator(),
-    C.textDisplay(lines),
-    C.separator(),
-    C.textDisplay(`-# ${CATEGORIES.length} categories · ${TOTAL} total commands`),
-  ], C.COLORS.info);
+  return message.reply({ flags: require('discord.js').MessageFlags.IsComponentsV2, components: [c] });
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

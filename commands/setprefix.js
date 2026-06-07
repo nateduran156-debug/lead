@@ -1,44 +1,24 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { setPrefix } = require('../utils/database');
-const C = require('../utils/components');
+'use strict';
 
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('setprefix')
-    .setDescription('Change the bot prefix for this server')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addStringOption(opt =>
-      opt.setName('prefix')
-        .setDescription('New prefix (1–5 characters)')
-        .setRequired(true)
-        .setMinLength(1)
-        .setMaxLength(5)
-    ),
+const { setPrefix }            = require('../utils/database');
+const { ok, err }              = require('../utils/components');
+const { PermissionFlagsBits }  = require('discord.js');
 
-  prefix: { name: 'setprefix', aliases: ['prefix'] },
-  usage: 'setprefix <new_prefix>',
+const category   = 'all';
+const prefixName = 'setprefix';
+const aliases    = ['prefix'];
 
-  async execute(interaction) {
-    const prefix = interaction.options.getString('prefix');
-    setPrefix(interaction.guild.id, prefix);
-    return interaction.reply(C.ok(`Bot prefix updated to \`${prefix}\``, true));
-  },
-
-  async prefixExecute(message, args) {
-    if (!message.member.permissions.has('Administrator') && message.author.id !== require('../utils/constants').OWNER_ID) {
-      return C.prefixErr(message, 'You need Administrator permission to change the prefix.');
-    }
-    const newPrefix = args[0];
-    if (!newPrefix || newPrefix.length > 5) {
-      return message.reply(C.commandCard({
-        name: 'setprefix',
-        description: 'Change the bot prefix for this server.',
-        syntax: `.setprefix <prefix>`,
-        example: `.setprefix !`,
-        aliases: ['prefix'],
-      }));
-    }
-    setPrefix(message.guild.id, newPrefix);
-    return C.prefixOk(message, `Bot prefix updated to \`${newPrefix}\``);
+async function prefixExecute(message, args) {
+  if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    return message.reply(err('You need the **Manage Server** permission to change the prefix.'));
   }
-};
+
+  const newPrefix = args[0];
+  if (!newPrefix) return message.reply(err('Provide a new prefix. Example: `.setprefix !`'));
+  if (newPrefix.length > 5) return message.reply(err('The prefix must be 5 characters or fewer.'));
+
+  setPrefix(message.guild.id, newPrefix);
+  return message.reply(ok(`Prefix updated to \`${newPrefix}\`.`));
+}
+
+module.exports = { prefixName, aliases, category, prefixExecute };

@@ -1,27 +1,22 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
-import { clearWarnings } from '../../utils/database.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('clearwarns')
-  .setDescription('clear all warnings for a member')
-  .addUserOption(o => o.setName('user').setDescription('user').setRequired(true))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers);
+const { ok, err }             = require('../../utils/components');
+const { clearWarnings }        = require('../../utils/database');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['clearwarnings', 'warnreset'];
-export const usage = '!clearwarns <@user>';
+const category   = 'moderation';
+const prefixName = 'clearwarns';
+const aliases    = ['clearwarnings', 'warnreset'];
 
-export async function execute(interaction) {
-  const user = interaction.options.getUser('user');
-  clearWarnings(interaction.guild.id, user.id);
-  await interaction.reply(ok(`cleared all warnings for ${user}`));
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers))
-    return message.reply(err('you need Moderate Members permission'));
+    return message.reply(err('You need the **Moderate Members** permission.'));
+
   const member = message.mentions.members.first();
-  if (!member) return message.reply(err('mention a member'));
+  if (!member) return message.reply(err('Mention a member.'));
+
   clearWarnings(message.guild.id, member.id);
-  await message.reply(ok(`cleared all warnings for ${member}`));
+  return message.reply(ok(`All warnings have been cleared for ${member}.`));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

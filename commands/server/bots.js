@@ -1,33 +1,19 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('bots')
-  .setDescription('list all bots in the server');
+const { card, COLORS } = require('../../utils/components');
 
-export const aliases = ['botlist', 'robots'];
-export const usage = '!bots';
+const category   = 'server';
+const prefixName = 'bots';
+const aliases    = ['botlist'];
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  await interaction.guild.members.fetch();
-  const bots = interaction.guild.members.cache.filter(m => m.user.bot).sort((a, b) => a.user.username.localeCompare(b.user.username));
-  await interaction.editReply(card({
-    title: `🤖 bots in ${interaction.guild.name}`,
-    desc: bots.size
-      ? [...bots.values()].map(m => `${m} (\`${m.user.id}\`)`).join('\n')
-      : 'no bots',
-    color: COLORS.blue,
+async function prefixExecute(message) {
+  const bots = message.guild.members.cache.filter(m => m.user.bot);
+  return message.reply(card({
+    title:  `${message.guild.name} — Bots`,
+    desc:   bots.map(m => `${m.user.username} \`${m.id}\``).join('\n') || 'None',
+    color:  COLORS.blue,
     footer: `${bots.size} bot${bots.size === 1 ? '' : 's'}`,
   }));
 }
 
-export async function prefixExecute(message) {
-  await message.guild.members.fetch();
-  const bots = message.guild.members.cache.filter(m => m.user.bot);
-  await message.reply(card({
-    title: `bots — ${bots.size}`,
-    desc: [...bots.values()].map(b => b.user.username).join(', ') || 'none',
-    color: COLORS.blue,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

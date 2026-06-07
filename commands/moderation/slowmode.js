@@ -1,30 +1,28 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('slowmode')
-  .setDescription('set slowmode in a channel')
-  .addIntegerOption(o => o.setName('seconds').setDescription('slowmode delay in seconds (0 to disable)').setRequired(true).setMinValue(0).setMaxValue(21600))
-  .addChannelOption(o => o.setName('channel').setDescription('channel (default: current)'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['slow', 'sm'];
-export const usage = '!slowmode <seconds> [#channel]';
+const category   = 'moderation';
+const prefixName = 'slowmode';
+const aliases    = ['sm', 'slow', 'ratelimit'];
 
-export async function execute(interaction) {
-  const secs = interaction.options.getInteger('seconds');
-  const ch = interaction.options.getChannel('channel') || interaction.channel;
-  await ch.setRateLimitPerUser(secs);
-  const msg = secs === 0 ? `slowmode disabled in ${ch}` : `slowmode set to **${secs}s** in ${ch}`;
-  await interaction.reply(ok(msg));
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels))
-    return message.reply(err('you need Manage Channels permission'));
-  const secs = parseInt(args[0]);
-  if (isNaN(secs) || secs < 0 || secs > 21600) return message.reply(err('provide seconds between 0 and 21600'));
-  const ch = message.mentions.channels.first() || message.channel;
-  await ch.setRateLimitPerUser(secs);
-  await message.reply(ok(secs === 0 ? `slowmode disabled in ${ch}` : `slowmode set to **${secs}s** in ${ch}`));
+    return message.reply(err('You need the **Manage Channels** permission.'));
+
+  const ch      = message.mentions.channels.first() || message.channel;
+  const seconds = parseInt(args[0]) ?? 0;
+
+  if (isNaN(seconds) || seconds < 0 || seconds > 21600)
+    return message.reply(err('Provide a number between 0 and 21600 seconds.'));
+
+  try {
+    await ch.setRateLimitPerUser(seconds);
+    message.reply(ok(seconds === 0 ? `Slowmode disabled in ${ch}.` : `Slowmode set to **${seconds}s** in ${ch}.`));
+  } catch (e) {
+    message.reply(err(`Failed: ${e.message}`));
+  }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

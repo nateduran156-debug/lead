@@ -1,38 +1,29 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('deleterole')
-  .setDescription('delete a role')
-  .addRoleOption(o => o.setName('role').setDescription('role to delete').setRequired(true))
-  .addStringOption(o => o.setName('reason').setDescription('reason'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['dr', 'removerole2'];
-export const usage = '!deleterole <@role> [reason]';
+const category   = 'moderation';
+const prefixName = 'deleterole';
+const aliases    = ['dr', 'delrole', 'rmrole'];
 
-export async function execute(interaction) {
-  const role = interaction.options.getRole('role');
-  const reason = interaction.options.getString('reason') || 'no reason';
-  if (role.position >= interaction.member.roles.highest.position)
-    return interaction.reply(err('that role is above or equal to your highest role'));
-  try {
-    await role.delete(reason);
-    await interaction.reply(ok(`deleted role **${role.name}**`));
-  } catch (e) {
-    await interaction.reply(err(`failed: ${e.message}`));
-  }
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
-    return message.reply(err('you need Manage Roles permission'));
-  const role = message.mentions.roles.first();
-  if (!role) return message.reply(err('mention a role to delete'));
+    return message.reply(err('You need the **Manage Roles** permission.'));
+
+  const role = message.mentions.roles.first()
+    || message.guild.roles.cache.find(r => r.name.toLowerCase() === args.join(' ').toLowerCase());
+  if (!role) return message.reply(err('Mention a role or provide its name.'));
+  if (role.position >= message.guild.members.me.roles.highest.position)
+    return message.reply(err('I cannot delete a role above my highest role.'));
+
   try {
-    await role.delete();
-    await message.reply(ok(`deleted role **${role.name}**`));
+    const name = role.name;
+    await role.delete(`Deleted by ${message.author.tag}`);
+    message.reply(ok(`Role **${name}** has been deleted.`));
   } catch (e) {
-    await message.reply(err(`failed: ${e.message}`));
+    message.reply(err(`Failed: ${e.message}`));
   }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

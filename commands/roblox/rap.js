@@ -1,39 +1,34 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getUser, getUserRap } from '../../utils/roblox.js';
+'use strict';
 
+const { card, err, COLORS }       = require('../../utils/components');
+const { getUserByUsername, getUserRap } = require('../../utils/roblox');
 
-export const data = new SlashCommandBuilder()
-  .setName('rap')
-  .setDescription('check a roblox user\'s recent average price (RAP)')
-  .addStringOption(o => o.setName('username').setDescription('roblox username').setRequired(true));
+const category   = 'roblox';
+const prefixName = 'rap';
+const aliases    = ['limiteds', 'rap'];
 
-export const aliases = ['rorap', 'rapvalue'];
-export const usage = '!rap <username>';
+async function prefixExecute(message, args) {
+  const input = args[0];
+  if (!input) return message.reply(err('Provide a Roblox username or ID.'));
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  const username = interaction.options.getString('username');
-  const u = await getUser(username).catch(() => null);
-  if (!u) return interaction.editReply(err(`**${username}** not found`));
-  const rap = await getUserRap(u.id).catch(() => null);
-  await interaction.editReply(card({
-    title: `${u.displayName}'s RAP`,
-    desc: `**R$** ${rap?.toLocaleString() ?? 'unavailable'}`,
-    color: COLORS.roblox,
-    footer: `recent average price`,
+  await message.channel.sendTyping().catch(() => {});
+
+  let user;
+  try {
+    user = /^\d+$/.test(input) ? { id: input, name: input } : await getUserByUsername(input);
+  } catch {
+    return message.reply(err('Failed to reach the Roblox API.'));
+  }
+  if (!user) return message.reply(err(`No account found for **${input}**.`));
+
+  const rap = await getUserRap(user.id).catch(() => 0);
+
+  return message.reply(card({
+    title: `${user.name ?? input}'s RAP`,
+    desc:  `**Recent Average Price** ${rap.toLocaleString()} R$`,
+    color: COLORS.gold,
+    footer: 'Based on limited collectibles currently in the inventory',
   }));
 }
 
-export async function prefixExecute(message, args) {
-  const username = args[0];
-  if (!username) return message.reply(err('provide a roblox username'));
-  const u = await getUser(username).catch(() => null);
-  if (!u) return message.reply(err(`**${username}** not found`));
-  const rap = await getUserRap(u.id).catch(() => null);
-  await message.reply(card({
-    title: `${u.displayName}'s RAP`,
-    desc: `**R$** ${rap?.toLocaleString() ?? 'unavailable'}`,
-    color: COLORS.roblox,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

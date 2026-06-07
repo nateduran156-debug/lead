@@ -1,41 +1,27 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { modCard, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('unban')
-  .setDescription('unban a user by id')
-  .addStringOption(o => o.setName('userid').setDescription('user id to unban').setRequired(true))
-  .addStringOption(o => o.setName('reason').setDescription('reason'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['ub'];
-export const usage = '!unban <userid> [reason]';
+const category   = 'moderation';
+const prefixName = 'unban';
+const aliases    = ['ub', 'pardon'];
 
-export async function execute(interaction) {
-  const userId = interaction.options.getString('userid');
-  const reason = interaction.options.getString('reason') || 'no reason provided';
-  try {
-    const ban = await interaction.guild.bans.fetch(userId).catch(() => null);
-    if (!ban) return interaction.reply(err('that user is not banned'));
-    await interaction.guild.bans.remove(userId, reason);
-    await interaction.reply(modCard({ action: 'Unbanned', user: ban.user, mod: interaction.user, reason }));
-  } catch (e) {
-    await interaction.reply(err(`unban failed: ${e.message}`));
-  }
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.BanMembers))
-    return message.reply(err('you need Ban Members permission'));
+    return message.reply(err('You need the **Ban Members** permission.'));
+
   const userId = args[0];
-  if (!userId) return message.reply(err('provide a user id to unban'));
-  const reason = args.slice(1).join(' ') || 'no reason provided';
+  if (!userId) return message.reply(err('Provide a user ID to unban.'));
+
+  const reason = args.slice(1).join(' ') || 'No reason provided';
+
   try {
-    const ban = await message.guild.bans.fetch(userId).catch(() => null);
-    if (!ban) return message.reply(err('that user is not banned'));
     await message.guild.bans.remove(userId, reason);
-    await message.reply(modCard({ action: 'Unbanned', user: ban.user, mod: message.author, reason }));
+    return message.reply(ok(`<@${userId}> has been unbanned.`));
   } catch (e) {
-    await message.reply(err(`unban failed: ${e.message}`));
+    message.reply(err(`Unban failed: ${e.message}`));
   }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

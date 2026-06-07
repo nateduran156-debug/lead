@@ -1,41 +1,25 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('nuke')
-  .setDescription('clone and delete a channel to clear all messages')
-  .addChannelOption(o => o.setName('channel').setDescription('channel to nuke (default: current)'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['clearchannel', 'wipe'];
-export const usage = '!nuke [#channel]';
+const category   = 'moderation';
+const prefixName = 'nuke';
+const aliases    = ['clearchannel'];
 
-export async function execute(interaction) {
-  const ch = interaction.options.getChannel('channel') || interaction.channel;
-  await interaction.deferReply({ ephemeral: true });
-  try {
-    const newCh = await ch.clone();
-    await newCh.setPosition(ch.position);
-    await ch.delete();
-    const m = await newCh.send(ok(`nuked by ${interaction.user}`));
-    setTimeout(() => m.delete().catch(() => {}), 5000);
-    await interaction.editReply(ok(`nuked ${newCh}`));
-  } catch (e) {
-    await interaction.editReply(err(`nuke failed: ${e.message}`));
-  }
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels))
-    return message.reply(err('you need Manage Channels permission'));
-  const ch = message.mentions.channels.first() || message.channel;
+    return message.reply(err('You need the **Manage Channels** permission.'));
+
+  const ch = message.channel;
+
   try {
-    const newCh = await ch.clone();
-    await newCh.setPosition(ch.position);
+    const clone = await ch.clone({ reason: `Nuked by ${message.author.tag}` });
     await ch.delete();
-    const m = await newCh.send(ok(`nuked by ${message.author}`));
-    setTimeout(() => m.delete().catch(() => {}), 5000);
+    clone.send(ok(`💥 Channel nuked by ${message.author}.`));
   } catch (e) {
-    message.channel.send(err(`nuke failed: ${e.message}`)).catch(() => {});
+    message.reply(err(`Nuke failed: ${e.message}`));
   }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

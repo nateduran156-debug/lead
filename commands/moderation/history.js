@@ -1,38 +1,30 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getWarnings } from '../../utils/database.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('history')
-  .setDescription('view full moderation history for a member')
-  .addUserOption(o => o.setName('user').setDescription('user').setRequired(true))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers);
+const { card, err, COLORS }  = require('../../utils/components');
+const { getWarnings }         = require('../../utils/database');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['modhistory', 'mh'];
-export const usage = '!history <@user>';
+const category   = 'moderation';
+const prefixName = 'history';
+const aliases    = ['modhistory', 'mh'];
 
-export async function execute(interaction) {
-  const user = interaction.options.getUser('user');
-  const warns = getWarnings(interaction.guild.id, user.id);
-  await interaction.reply(card({
-    title: `mod history — ${user.username}`,
-    desc: warns.length
-      ? warns.map((w, i) => `\`#${i + 1}\` **warn** — ${w.reason} — <t:${w.created_at}:R>`).join('\n')
-      : 'clean record, no actions found',
-    color: warns.length ? COLORS.yellow : COLORS.green,
-    footer: `${warns.length} action${warns.length === 1 ? '' : 's'}`,
-  }));
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers))
-    return message.reply(err('you need Moderate Members permission'));
+    return message.reply(err('You need the **Moderate Members** permission.'));
+
   const member = message.mentions.members.first();
-  if (!member) return message.reply(err('mention a member'));
+  if (!member) return message.reply(err('Mention a member to view their history.'));
+
   const warns = getWarnings(message.guild.id, member.id);
-  await message.reply(card({
-    title: `mod history — ${member.user.username}`,
-    desc: warns.length ? warns.map((w, i) => `#${i + 1} warn — ${w.reason}`).join('\n') : 'clean record',
+
+  return message.reply(card({
+    title: `Mod History — ${member.user.username}`,
+    desc:  warns.length
+      ? warns.map((w, i) => `\`#${i + 1}\` **Warn** — ${w.reason} — <@${w.mod_id}> <t:${w.created_at}:R>`).join('\n')
+      : 'No recorded infractions.',
     color: warns.length ? COLORS.yellow : COLORS.green,
+    footer: `${warns.length} action${warns.length === 1 ? '' : 's'} total`,
   }));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

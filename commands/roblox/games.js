@@ -1,39 +1,34 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getUser, getGames } from '../../utils/roblox.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('games')
-  .setDescription('view a roblox user\'s games')
-  .addStringOption(o => o.setName('username').setDescription('roblox username').setRequired(true));
+const { card, err, COLORS }           = require('../../utils/components');
+const { getUserByUsername, getUserGames } = require('../../utils/roblox');
 
-export const aliases = ['usergames', 'rgames'];
-export const usage = '!games <username>';
+const category   = 'roblox';
+const prefixName = 'games';
+const aliases    = ['rgames', 'usergames'];
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  const username = interaction.options.getString('username');
-  const u = await getUser(username).catch(() => null);
-  if (!u) return interaction.editReply(err(`**${username}** not found`));
-  const games = await getGames(u.id).catch(() => []);
-  if (!games.length) return interaction.editReply(err(`${u.displayName} has no public games`));
-  await interaction.editReply(card({
-    title: `${u.displayName}'s games`,
-    desc: games.slice(0, 10).map((g, i) => `**${i + 1}.** [${g.name}](https://www.roblox.com/games/${g.rootPlaceId}) — ${g.placeVisits?.toLocaleString() ?? '?'} visits`).join('\n'),
-    color: COLORS.roblox,
-    footer: `${games.length} total game${games.length === 1 ? '' : 's'}`,
+async function prefixExecute(message, args) {
+  const input = args[0];
+  if (!input) return message.reply(err('Provide a Roblox username or ID.'));
+
+  await message.channel.sendTyping().catch(() => {});
+
+  let user;
+  try {
+    user = /^\d+$/.test(input) ? { id: input, name: input } : await getUserByUsername(input);
+  } catch {
+    return message.reply(err('Failed to reach the Roblox API.'));
+  }
+  if (!user) return message.reply(err(`No account found for **${input}**.`));
+
+  const games = await getUserGames(user.id).catch(() => []);
+  if (!games.length) return message.reply(card({ title: `${user.name ?? input}'s Games`, desc: 'No public games found.', color: COLORS.gray }));
+
+  return message.reply(card({
+    title: `${user.name ?? input}'s Games`,
+    desc:  games.slice(0, 10).map(g => `**${g.name}** — ${g.placeVisits?.toLocaleString() ?? '?'} visits`).join('\n'),
+    color: COLORS.teal,
   }));
 }
 
-export async function prefixExecute(message, args) {
-  const username = args[0];
-  if (!username) return message.reply(err('provide a roblox username'));
-  const u = await getUser(username).catch(() => null);
-  if (!u) return message.reply(err(`**${username}** not found`));
-  const games = await getGames(u.id).catch(() => []);
-  await message.reply(card({
-    title: `${u.displayName}'s games`,
-    desc: games.length ? games.slice(0, 5).map(g => `**${g.name}** — ${g.placeVisits?.toLocaleString() ?? '?'} visits`).join('\n') : 'no public games',
-    color: COLORS.roblox,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

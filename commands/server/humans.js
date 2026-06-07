@@ -1,36 +1,18 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('humans')
-  .setDescription('show the number of real users in the server');
+const { card, COLORS } = require('../../utils/components');
 
-export const aliases = ['realusers', 'people'];
-export const usage = '!humans';
+const category   = 'server';
+const prefixName = 'humans';
+const aliases    = ['humanlist', 'members'];
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  const guild = interaction.guild;
-  await guild.members.fetch();
-  const humans = guild.members.cache.filter(m => !m.user.bot);
-  await interaction.editReply(card({
-    title: `${guild.name} — humans`,
-    fields: [
-      { name: 'Total Members', value: String(guild.memberCount), inline: true },
-      { name: 'Humans', value: String(humans.size), inline: true },
-      { name: 'Bots', value: String(guild.memberCount - humans.size), inline: true },
-    ],
-    color: COLORS.blue,
-    footer: `${Math.round((humans.size / guild.memberCount) * 100)}% human`,
+async function prefixExecute(message) {
+  const humans = message.guild.members.cache.filter(m => !m.user.bot);
+  return message.reply(card({
+    title:  `${message.guild.name} — Members`,
+    desc:   `**Humans** ${humans.size}\n**Bots** ${message.guild.memberCount - humans.size}\n**Total** ${message.guild.memberCount}`,
+    color:  COLORS.blue,
   }));
 }
 
-export async function prefixExecute(message) {
-  await message.guild.members.fetch();
-  const humans = message.guild.members.cache.filter(m => !m.user.bot).size;
-  await message.reply(card({
-    title: `${message.guild.name}`,
-    desc: `**${humans}** humans out of **${message.guild.memberCount}** total`,
-    color: COLORS.blue,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

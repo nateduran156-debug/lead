@@ -1,32 +1,24 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('roles')
-  .setDescription('list all roles in the server');
+const { card, COLORS } = require('../../utils/components');
 
-export const aliases = ['rolelist', 'allroles'];
-export const usage = '!roles';
+const category   = 'server';
+const prefixName = 'roles';
+const aliases    = ['rolelist', 'listroles'];
 
-export async function execute(interaction) {
-  const roles = [...interaction.guild.roles.cache.values()]
-    .filter(r => r.id !== interaction.guild.id)
-    .sort((a, b) => b.position - a.position);
-  await interaction.reply(card({
-    title: `${interaction.guild.name} roles`,
-    desc: roles.slice(0, 30).map(r => `${r} — **${r.members.size}**`).join('\n') + (roles.length > 30 ? `\n*...and ${roles.length - 30} more*` : ''),
-    color: COLORS.blue,
+async function prefixExecute(message) {
+  const roles = [...message.guild.roles.cache.values()]
+    .sort((a, b) => b.position - a.position)
+    .filter(r => r.id !== message.guild.id);
+
+  const lines = roles.slice(0, 30).map(r => `<@&${r.id}> \`${r.members.size}\``).join('\n');
+
+  return message.reply(card({
+    title:  `${message.guild.name} — Roles`,
+    desc:   lines + (roles.length > 30 ? `\n*…and ${roles.length - 30} more*` : ''),
+    color:  COLORS.blue,
     footer: `${roles.length} role${roles.length === 1 ? '' : 's'}`,
   }));
 }
 
-export async function prefixExecute(message) {
-  const roles = [...message.guild.roles.cache.values()]
-    .filter(r => r.id !== message.guild.id)
-    .sort((a, b) => b.position - a.position);
-  await message.reply(card({
-    title: `${message.guild.name} roles — ${roles.length}`,
-    desc: roles.slice(0, 20).map(r => `${r}`).join(' '),
-    color: COLORS.blue,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

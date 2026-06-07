@@ -1,50 +1,32 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('serverinfo')
-  .setDescription('info about this server');
+const { card, COLORS }  = require('../../utils/components');
+const { ChannelType }    = require('discord.js');
 
-export const aliases = ['guildinfo', 'si', 'server'];
-export const usage = '!serverinfo';
+const category   = 'server';
+const prefixName = 'serverinfo';
+const aliases    = ['si', 'server'];
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  const guild = interaction.guild;
-  await guild.fetch();
-  const owner = await guild.fetchOwner().catch(() => null);
-  const channels = guild.channels.cache;
-  const members = guild.members.cache;
-  await interaction.editReply(card({
-    title: guild.name,
+async function prefixExecute(message) {
+  const g       = message.guild;
+  const owner   = await g.fetchOwner().catch(() => null);
+  const channels = g.channels.cache;
+
+  return message.reply(card({
+    title: g.name,
     fields: [
-      { name: 'Owner', value: owner?.user.username ?? 'unknown', inline: true },
-      { name: 'ID', value: guild.id, inline: true },
-      { name: 'Created', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>`, inline: true },
-      { name: 'Members', value: `${guild.memberCount} total (${members.filter(m => m.user.bot).size} bots)`, inline: true },
-      { name: 'Channels', value: `${channels.filter(c => c.type === 0).size} text, ${channels.filter(c => c.type === 2).size} voice`, inline: true },
-      { name: 'Roles', value: String(guild.roles.cache.size), inline: true },
-      { name: 'Boosts', value: `Level ${guild.premiumTier} (${guild.premiumSubscriptionCount})`, inline: true },
-      { name: 'Verification', value: ['None', 'Low', 'Medium', 'High', 'Very High'][guild.verificationLevel] || '?', inline: true },
-      { name: 'Vanity', value: guild.vanityURLCode ? `discord.gg/${guild.vanityURLCode}` : 'none', inline: true },
+      { name: 'Owner',       value: owner ? `${owner.user.username} \`${owner.id}\`` : 'Unknown' },
+      { name: 'Members',     value: `${g.memberCount}` },
+      { name: 'Channels',    value: `${channels.filter(c => c.type === ChannelType.GuildText).size} text · ${channels.filter(c => c.type === ChannelType.GuildVoice).size} voice` },
+      { name: 'Roles',       value: `${g.roles.cache.size}` },
+      { name: 'Boosts',      value: `${g.premiumSubscriptionCount} (Level ${g.premiumTier})` },
+      { name: 'Emojis',      value: `${g.emojis.cache.size}` },
+      { name: 'Verification',value: g.verificationLevel.toString() },
+      { name: 'Created',     value: `<t:${Math.floor(g.createdTimestamp / 1000)}:D>` },
     ],
-    color: COLORS.blue,
-    image: guild.bannerURL({ size: 1024 }) || undefined,
+    color:  COLORS.blue,
+    footer: `ID: ${g.id}`,
   }));
 }
 
-export async function prefixExecute(message) {
-  const guild = message.guild;
-  await guild.fetch();
-  const owner = await guild.fetchOwner().catch(() => null);
-  await message.reply(card({
-    title: guild.name,
-    fields: [
-      { name: 'Owner', value: owner?.user.username ?? '?', inline: true },
-      { name: 'Members', value: String(guild.memberCount), inline: true },
-      { name: 'Created', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>`, inline: true },
-      { name: 'Boosts', value: `Level ${guild.premiumTier} (${guild.premiumSubscriptionCount})`, inline: true },
-    ],
-    color: COLORS.blue,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

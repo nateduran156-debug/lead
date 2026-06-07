@@ -1,113 +1,66 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const db = require('../utils/database');
-const { isWhitelisted } = require('../utils/whitelist');
-const { GROUP_164, GROUP_TAGS, GROUP_164_ROLES, GROUP_TAGS_ROLES, ALL_TAG_NAMES } = require('../utils/constants');
-const roblox = require('../utils/roblox');
-const C = require('../utils/components');
+'use strict';
 
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('tag')
-    .setDescription('Give a Roblox group tag to a user')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addStringOption(opt =>
-      opt.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true)
-    )
-    .addStringOption(opt =>
-      opt.setName('tag').setDescription('Tag to give').setRequired(true)
-        .addChoices(
-          { name: '164 tag (Group: 948951510)',      value: '164 tag' },
-          { name: 'KITTY TAG (Group: 575770529)',    value: 'KITTY TAG' },
-          { name: 'lurk tag (Group: 575770529)',     value: 'lurk tag' },
-          { name: 'AMOR TAG (Group: 575770529)',     value: 'AMOR TAG' },
-          { name: 'YinYang (Group: 575770529)',      value: 'YinYang' },
-        )
-    ),
+const { getTag, getAllTags, setTag, deleteTag } = require('../utils/database');
+const { ok, err, card, COLORS, CV2, C }         = require('../utils/components');
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  PermissionFlagsBits,
+} = require('discord.js');
 
-  prefix: { name: 'tag', aliases: [] },
-  usage: `tag <roblox_user> <tag>`,
-  category: 'tags',
+const category   = 'tags';
+const prefixName = 'tag';
+const aliases    = ['t', 'tags'];
 
-  async execute(interaction) {
-    if (!isWhitelisted(interaction.member, 'tags') && !isWhitelisted(interaction.member)) {
-      return interaction.reply(C.err('You are not whitelisted to use this command.'));
-    }
-    await interaction.deferReply({ ephemeral: true });
-    await runTag(
-      interaction.guild,
-      interaction.user.id,
-      interaction.options.getString('roblox_user').trim(),
-      interaction.options.getString('tag'),
-      (payload) => interaction.editReply(payload)
-    );
-  },
+const S = (d = true) => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(d);
 
-  async prefixExecute(message, args) {
-    if (!isWhitelisted(message.member, 'tags') && !isWhitelisted(message.member)) {
-      return C.prefixErr(message, 'You are not whitelisted to use this command.');
-    }
-    if (args.length < 2) {
-      return message.reply(C.commandCard({
-        name: 'tag',
-        description: `Give a Roblox group tag to a user.\n\nAvailable tags: ${ALL_TAG_NAMES.map(t => `\`${t}\``).join(', ')}`,
-        syntax: `.tag <roblox_user> <tag>`,
-        example: `.tag builderman KITTY TAG`,
-        aliases: [],
-      }));
-    }
+async function prefixExecute(message, args) {
+  const sub = args[0]?.toLowerCase();
 
-    const robloxInput = args[0];
-    const tagName     = args.slice(1).join(' ');
-
-    if (!ALL_TAG_NAMES.includes(tagName)) {
-      return message.reply(C.err(`Invalid tag. Available tags: ${ALL_TAG_NAMES.map(t => `\`${t}\``).join(', ')}`));
-    }
-
-    await runTag(message.guild, message.author.id, robloxInput, tagName,
-      (payload) => C.prefixSend(message, payload.components)
-    );
-  }
-};
-
-async function runTag(guild, actorId, robloxInput, tagName, reply) {
-  let robloxUser;
-  try {
-    if (/^\d+$/.test(robloxInput)) {
-      robloxUser = await roblox.getUserById(robloxInput);
-    } else {
-      const found = await roblox.getUserByUsername(robloxInput);
-      if (!found) throw new Error('not found');
-      robloxUser = await roblox.getUserById(found.id);
-    }
-  } catch {
-    return reply(C.err(`Could not find Roblox user \`${robloxInput}\`. Check the username or ID.`));
+  // ── .tag list ────────────────────────────────────────────────────────────
+  if (!sub || sub === 'list') {
+    const tags = getAllTags(message.guild.id);
+    if (!tags.length) return message.reply(card({ title: 'Tags', desc: 'No tags created yet.', color: COLORS.blue }));
+    const c = new ContainerBuilder()
+      .setAccentColor(COLORS.blue)
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent('## Tags'))
+      .addSeparatorComponents(S())
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        tags.map(t => `\`${t.name}\``).join(', ')
+      ));
+    return message.reply({ flags: require('discord.js').MessageFlags.IsComponentsV2, components: [c] });
   }
 
-  const groupId = GROUP_164_ROLES.includes(tagName) ? GROUP_164 : GROUP_TAGS;
-
-  let groupRoles;
-  try {
-    groupRoles = await roblox.getGroupRoles(groupId);
-  } catch {
-    return reply(C.err('Failed to fetch group roles. Check bot cookie and group access.'));
+  // ── .tag create <name> <content> ─────────────────────────────────────────
+  if (sub === 'create' || sub === 'add') {
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages))
+      return message.reply(err('You need the **Manage Messages** permission to create tags.'));
+    const name    = args[1]?.toLowerCase();
+    const content = args.slice(2).join(' ');
+    if (!name || !content) return message.reply(err('Usage: `.tag create <name> <content>`'));
+    setTag(message.guild.id, name, content, message.author.id);
+    return message.reply(ok(`Tag \`${name}\` has been saved.`));
   }
 
-  const targetRole = groupRoles.find(r => r.name === tagName);
-  if (!targetRole) {
-    return reply(C.err(`Role \`${tagName}\` not found in group \`${groupId}\`.`));
+  // ── .tag delete <name> ───────────────────────────────────────────────────
+  if (sub === 'delete' || sub === 'remove') {
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages))
+      return message.reply(err('You need the **Manage Messages** permission to delete tags.'));
+    const name = args[1]?.toLowerCase();
+    if (!name) return message.reply(err('Provide the tag name to delete.'));
+    const res  = deleteTag(message.guild.id, name);
+    if (!res.changes) return message.reply(err(`No tag named \`${name}\` found.`));
+    return message.reply(ok(`Tag \`${name}\` has been deleted.`));
   }
 
-  try {
-    await roblox.setGroupRank(groupId, robloxUser.id, targetRole.id);
-  } catch (err) {
-    const msg = err?.response?.data?.errors?.[0]?.message ?? err.message ?? 'Unknown error';
-    return reply(C.err(`Failed to apply tag: ${msg}`));
-  }
+  // ── .tag <name> — display the tag ────────────────────────────────────────
+  const name = sub;
+  const tag  = getTag(message.guild.id, name);
+  if (!tag) return message.reply(err(`No tag named \`${name}\` found.`));
 
-  db.prepare(`INSERT INTO roblox_tags (discord_id, roblox_id, roblox_username, tag_name, group_id, guild_id, given_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(actorId, String(robloxUser.id), robloxUser.name, tagName, groupId, guild.id, actorId);
-
-  return reply(C.ok(
-    `**Tag Applied**\n\nRoblox user **${robloxUser.name}** (\`${robloxUser.id}\`) has been given the **${tagName}** tag in group \`${groupId}\`.`
-  ));
+  return message.reply({ content: tag.content });
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

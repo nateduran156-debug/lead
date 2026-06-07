@@ -1,39 +1,31 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('roleall')
-  .setDescription('give a role to every member')
-  .addRoleOption(o => o.setName('role').setDescription('role to give').setRequired(true))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['massrole', 'giveroleall'];
-export const usage = '!roleall <@role>';
+const category   = 'moderation';
+const prefixName = 'roleall';
+const aliases    = ['massrole', 'giveroleall'];
 
-export async function execute(interaction) {
-  const role = interaction.options.getRole('role');
-  if (role.position >= interaction.member.roles.highest.position)
-    return interaction.reply(err('that role is above your highest role'));
-  await interaction.deferReply();
-  const members = await interaction.guild.members.fetch();
+async function prefixExecute(message, args) {
+  if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
+    return message.reply(err('You need the **Manage Roles** permission.'));
+
+  const role = message.mentions.roles.first();
+  if (!role) return message.reply(err('Mention a role to give to all members.'));
+  if (role.position >= message.member.roles.highest.position)
+    return message.reply(err('You cannot assign a role equal to or above your highest role.'));
+
+  const members = await message.guild.members.fetch();
   let given = 0;
+
   for (const [, m] of members) {
     if (!m.roles.cache.has(role.id)) {
       await m.roles.add(role).then(() => given++).catch(() => {});
     }
   }
-  await interaction.editReply(ok(`gave ${role} to **${given}** members`));
+
+  message.reply(ok(`Gave ${role} to **${given}** member(s).`));
 }
 
-export async function prefixExecute(message, args) {
-  if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
-    return message.reply(err('you need Manage Roles permission'));
-  const role = message.mentions.roles.first();
-  if (!role) return message.reply(err('mention a role'));
-  const members = await message.guild.members.fetch();
-  let given = 0;
-  for (const [, m] of members) {
-    await m.roles.add(role).then(() => given++).catch(() => {});
-  }
-  await message.reply(ok(`gave ${role} to **${given}** members`));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

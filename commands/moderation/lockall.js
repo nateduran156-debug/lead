@@ -1,34 +1,27 @@
-import { SlashCommandBuilder, PermissionFlagsBits, ChannelType } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('lockall')
-  .setDescription('lock all text channels in the server')
-  .addStringOption(o => o.setName('reason').setDescription('reason'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+const { ok, err }              = require('../../utils/components');
+const { PermissionFlagsBits, ChannelType } = require('discord.js');
 
-export const aliases = ['lockdown', 'serverlock'];
-export const usage = '!lockall [reason]';
+const category   = 'moderation';
+const prefixName = 'lockall';
+const aliases    = ['serverlock', 'lockserver'];
 
-export async function execute(interaction) {
-  const reason = interaction.options.getString('reason') || 'server lockdown';
-  await interaction.deferReply();
-  const channels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
-  let locked = 0;
-  for (const [, ch] of channels) {
-    await ch.permissionOverwrites.edit(interaction.guild.id, { SendMessages: false }, { reason }).then(() => locked++).catch(() => {});
-  }
-  await interaction.editReply(ok(`locked ${locked} channels — **${reason}**`));
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.Administrator))
-    return message.reply(err('you need Administrator permission'));
-  const reason = args.join(' ') || 'server lockdown';
+    return message.reply(err('You need the **Administrator** permission.'));
+
+  const reason   = args.join(' ') || 'Server lockdown';
   const channels = message.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
-  let locked = 0;
+  let locked     = 0;
+
   for (const [, ch] of channels) {
-    await ch.permissionOverwrites.edit(message.guild.id, { SendMessages: false }, { reason }).then(() => locked++).catch(() => {});
+    await ch.permissionOverwrites.edit(message.guild.id, { SendMessages: false }, { reason })
+      .then(() => locked++)
+      .catch(() => {});
   }
-  await message.reply(ok(`locked ${locked} channels`));
+
+  message.reply(ok(`🔒 Locked **${locked}** channels — **${reason}**`));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

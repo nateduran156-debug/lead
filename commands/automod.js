@@ -1,177 +1,128 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const db = require('../utils/database');
-const { isWhitelisted } = require('../utils/whitelist');
-const C = require('../utils/components');
+'use strict';
 
-const ACTIONS = ['warn', 'timeout', 'kick', 'ban'];
+const { getAutomodConfig, setAutomodConfig } = require('../utils/database');
+const { ok, err, card, COLORS, CV2 }          = require('../utils/components');
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  PermissionFlagsBits,
+} = require('discord.js');
 
-function getSettings(guildId) {
-  return db.prepare('SELECT * FROM automod_settings WHERE guild_id = ?').get(guildId)
-    ?? { guild_id: guildId, enabled: 0, check_invites: 0, check_mentions: 0, mention_threshold: 5, action: 'warn' };
+const category   = 'automod';
+const prefixName = 'automod';
+const aliases    = ['am'];
+
+const S = (d = true) => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(d);
+
+function displayConfig(cfg) {
+  const c = new ContainerBuilder()
+    .setAccentColor(cfg?.enabled ? COLORS.green : COLORS.gray)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## AutoMod Configuration'))
+    .addSeparatorComponents(S())
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      `**Status** ${cfg?.enabled ? '✅ Enabled' : '❌ Disabled'}`,
+      `**Log Channel** ${cfg?.log_channel ? `<#${cfg.log_channel}>` : 'Not set'}`,
+      `**Spam** ${cfg?.spam_threshold ?? 5} messages / ${(cfg?.spam_window ?? 5000) / 1000}s`,
+      `**Caps Threshold** ${cfg?.caps_threshold ?? 70}%`,
+      `**Link Mode** ${cfg?.link_mode ?? 'off'}`,
+      `**Mention Limit** ${cfg?.mention_limit ?? 5}`,
+      `**Bad Words** ${JSON.parse(cfg?.bad_words || '[]').length} entries`,
+    ].join('\n')));
+  return { flags: require('discord.js').MessageFlags.IsComponentsV2, components: [c] };
 }
 
-function upsert(guildId, col, value) {
-  db.prepare(`INSERT INTO automod_settings (guild_id, ${col}) VALUES (?, ?)
-    ON CONFLICT(guild_id) DO UPDATE SET ${col} = excluded.${col}`).run(guildId, value);
-}
+async function prefixExecute(message, args) {
+  if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild))
+    return message.reply(err('You need the **Manage Server** permission.'));
 
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('automod')
-    .setDescription('Configure automatic moderation')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addSubcommand(sub => sub.setName('enable').setDescription('Enable automod'))
-    .addSubcommand(sub => sub.setName('disable').setDescription('Disable automod'))
-    .addSubcommand(sub => sub.setName('list').setDescription('View current automod settings'))
-    .addSubcommand(sub =>
-      sub.setName('addword')
-        .setDescription('Add a banned word or phrase')
-        .addStringOption(opt => opt.setName('word').setDescription('Word or phrase to block').setRequired(true))
-    )
-    .addSubcommand(sub =>
-      sub.setName('removeword')
-        .setDescription('Remove a banned word or phrase')
-        .addStringOption(opt => opt.setName('word').setDescription('Word or phrase to unblock').setRequired(true))
-    )
-    .addSubcommand(sub =>
-      sub.setName('invites')
-        .setDescription('Toggle Discord invite link filtering')
-        .addStringOption(opt =>
-          opt.setName('toggle').setDescription('on or off').setRequired(true)
-            .addChoices({ name: 'On', value: 'on' }, { name: 'Off', value: 'off' })
-        )
-    )
-    .addSubcommand(sub =>
-      sub.setName('mentions')
-        .setDescription('Set the mass mention threshold (0 = disabled)')
-        .addIntegerOption(opt =>
-          opt.setName('threshold').setDescription('Max mentions before action is taken').setRequired(true).setMinValue(0).setMaxValue(50)
-        )
-    )
-    .addSubcommand(sub =>
-      sub.setName('action')
-        .setDescription('Set the action taken when a rule is broken')
-        .addStringOption(opt =>
-          opt.setName('type').setDescription('Action type').setRequired(true)
-            .addChoices(
-              { name: 'Warn (message only)',   value: 'warn' },
-              { name: 'Timeout (10 minutes)',  value: 'timeout' },
-              { name: 'Kick',                  value: 'kick' },
-              { name: 'Ban',                   value: 'ban' },
-            )
-        )
-    ),
+  const guildId = message.guild.id;
+  const sub     = args[0]?.toLowerCase();
 
-  prefix: { name: 'automod', aliases: ['am'] },
-  usage: 'automod <enable|disable|list|addword|removeword|invites|mentions|action> [value]',
-
-  async execute(interaction) {
-    const sub = interaction.options.getSubcommand();
-    await runAutomod(sub, interaction.guild, {
-      word:      interaction.options.getString('word'),
-      toggle:    interaction.options.getString('toggle'),
-      threshold: interaction.options.getInteger('threshold'),
-      actionType: interaction.options.getString('type'),
-    }, (payload) => interaction.reply(payload));
-  },
-
-  async prefixExecute(message, args) {
-    if (!isWhitelisted(message.member) && !message.member.permissions.has('ManageGuild')) {
-      return C.prefixErr(message, 'You do not have permission to use this command.');
-    }
-    const sub = (args[0] ?? '').toLowerCase();
-    if (!sub) {
-      return message.reply(C.commandCard({
-        name: 'automod',
-        description: 'Configure automatic moderation for this server.',
-        syntax: `.automod <enable|disable|list|addword|removeword|invites|mentions|action>`,
-        example: `.automod addword badword`,
-        aliases: ['am'],
-      }));
-    }
-
-    await runAutomod(sub, message.guild, {
-      word:       args[1] ? args.slice(1).join(' ') : null,
-      toggle:     args[1]?.toLowerCase(),
-      threshold:  parseInt(args[1]) || null,
-      actionType: args[1]?.toLowerCase(),
-    }, (payload) => C.prefixSend(message, payload.components));
+  if (!sub || sub === 'config' || sub === 'status') {
+    return message.reply(displayConfig(getAutomodConfig(guildId)));
   }
-};
-
-async function runAutomod(sub, guild, opts, reply) {
-  const guildId = guild.id;
 
   if (sub === 'enable') {
-    upsert(guildId, 'enabled', 1);
-    return reply(C.ok('Automod is now **enabled**.'));
+    setAutomodConfig(guildId, { enabled: 1 });
+    return message.reply(ok('AutoMod has been **enabled**.'));
   }
 
   if (sub === 'disable') {
-    upsert(guildId, 'enabled', 0);
-    return reply(C.err('Automod is now **disabled**.', false));
+    setAutomodConfig(guildId, { enabled: 0 });
+    return message.reply(ok('AutoMod has been **disabled**.'));
   }
 
-  if (sub === 'list') {
-    const s = getSettings(guildId);
-    const words = db.prepare('SELECT word FROM automod_words WHERE guild_id = ? ORDER BY word').all(guildId);
-    return reply(C.card({
-      title: 'Automod Settings',
-      fields: [
-        { name: 'Status',        value: s.enabled ? 'Enabled' : 'Disabled' },
-        { name: 'Invite Filter', value: s.check_invites ? 'On' : 'Off' },
-        { name: 'Mass Mentions', value: s.check_mentions ? `On (threshold: ${s.mention_threshold})` : 'Off' },
-        { name: 'Action',        value: s.action },
-        {
-          name: `Banned Words (${words.length})`,
-          value: words.length ? words.map(w => `\`${w.word}\``).join(', ') : 'None',
-        },
-      ],
-      color: C.COLORS.info,
-    }));
+  if (sub === 'logchannel' || sub === 'log') {
+    const ch = message.mentions.channels.first();
+    if (!ch) return message.reply(err('Mention a channel.'));
+    setAutomodConfig(guildId, { log_channel: ch.id });
+    return message.reply(ok(`AutoMod logs will be sent to ${ch}.`));
   }
 
-  if (sub === 'addword') {
-    if (!opts.word) return reply(C.err('Provide a word or phrase to ban.'));
-    const word = opts.word.toLowerCase().trim();
-    try {
-      db.prepare('INSERT INTO automod_words (guild_id, word) VALUES (?, ?)').run(guildId, word);
-      return reply(C.ok(`\`${word}\` added to the banned word list.`));
-    } catch {
-      return reply(C.err(`\`${word}\` is already on the banned word list.`));
-    }
+  if (sub === 'spam') {
+    const threshold = parseInt(args[1]);
+    const window    = parseInt(args[2]) || 5;
+    if (isNaN(threshold) || threshold < 2) return message.reply(err('Provide a valid threshold (minimum 2).'));
+    setAutomodConfig(guildId, { spam_threshold: threshold, spam_window: window * 1000 });
+    return message.reply(ok(`Spam detection: **${threshold}** messages per **${window}s**.`));
   }
 
-  if (sub === 'removeword') {
-    if (!opts.word) return reply(C.err('Provide a word or phrase to remove.'));
-    const word = opts.word.toLowerCase().trim();
-    const res = db.prepare('DELETE FROM automod_words WHERE guild_id = ? AND word = ?').run(guildId, word);
-    if (res.changes === 0) return reply(C.err(`\`${word}\` was not found in the banned word list.`));
-    return reply(C.ok(`\`${word}\` removed from the banned word list.`));
+  if (sub === 'caps') {
+    const pct = parseInt(args[1]);
+    if (isNaN(pct) || pct < 10 || pct > 100) return message.reply(err('Provide a percentage between 10 and 100.'));
+    setAutomodConfig(guildId, { caps_threshold: pct });
+    return message.reply(ok(`Caps threshold set to **${pct}%**.`));
   }
 
-  if (sub === 'invites') {
-    const on = opts.toggle === 'on' ? 1 : 0;
-    upsert(guildId, 'check_invites', on);
-    return reply(C.ok(`Invite link filtering is now **${on ? 'on' : 'off'}**.`));
+  if (sub === 'links') {
+    const mode = args[1]?.toLowerCase();
+    if (!['off', 'block'].includes(mode)) return message.reply(err('Mode must be `off` or `block`.'));
+    setAutomodConfig(guildId, { link_mode: mode });
+    return message.reply(ok(`Link mode set to **${mode}**.`));
   }
 
   if (sub === 'mentions') {
-    if (opts.threshold === null || isNaN(opts.threshold)) return reply(C.err('Provide a number (0 to disable).'));
-    const on = opts.threshold > 0 ? 1 : 0;
-    upsert(guildId, 'check_mentions', on);
-    upsert(guildId, 'mention_threshold', opts.threshold);
-    return reply(C.ok(on
-      ? `Mass mention filter enabled — action triggers at **${opts.threshold}** mentions.`
-      : 'Mass mention filter disabled.'
-    ));
+    const limit = parseInt(args[1]);
+    if (isNaN(limit) || limit < 1) return message.reply(err('Provide a valid mention limit.'));
+    setAutomodConfig(guildId, { mention_limit: limit });
+    return message.reply(ok(`Mention limit set to **${limit}**.`));
   }
 
-  if (sub === 'action') {
-    if (!ACTIONS.includes(opts.actionType)) return reply(C.err(`Invalid action. Choose: ${ACTIONS.join(', ')}`));
-    upsert(guildId, 'action', opts.actionType);
-    return reply(C.ok(`Automod action set to **${opts.actionType}**.`));
+  if (sub === 'addword') {
+    const word = args[1]?.toLowerCase();
+    if (!word) return message.reply(err('Provide a word to add.'));
+    const cfg   = getAutomodConfig(guildId);
+    const words = JSON.parse(cfg?.bad_words || '[]');
+    if (!words.includes(word)) words.push(word);
+    setAutomodConfig(guildId, { bad_words: JSON.stringify(words) });
+    return message.reply(ok(`Added \`${word}\` to the blocked words list.`));
   }
 
-  return reply(C.err('Unknown subcommand.'));
+  if (sub === 'removeword') {
+    const word = args[1]?.toLowerCase();
+    if (!word) return message.reply(err('Provide a word to remove.'));
+    const cfg   = getAutomodConfig(guildId);
+    const words = JSON.parse(cfg?.bad_words || '[]').filter(w => w !== word);
+    setAutomodConfig(guildId, { bad_words: JSON.stringify(words) });
+    return message.reply(ok(`Removed \`${word}\` from the blocked words list.`));
+  }
+
+  return message.reply(card({
+    title: 'AutoMod — Usage',
+    desc: [
+      '`.automod enable/disable` — toggle AutoMod',
+      '`.automod log #channel` — set the log channel',
+      '`.automod spam <threshold> [window_seconds]` — configure spam detection',
+      '`.automod caps <percent>` — set the caps percentage threshold',
+      '`.automod links <off|block>` — configure link filtering',
+      '`.automod mentions <limit>` — set the mention limit',
+      '`.automod addword <word>` — add a blocked word',
+      '`.automod removeword <word>` — remove a blocked word',
+    ].join('\n'),
+    color: COLORS.blue,
+  }));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

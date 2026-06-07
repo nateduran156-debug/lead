@@ -1,31 +1,25 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
-import { addNote } from '../../utils/database.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('note')
-  .setDescription('add a private note to a member\'s record')
-  .addUserOption(o => o.setName('user').setDescription('user').setRequired(true))
-  .addStringOption(o => o.setName('note').setDescription('the note').setRequired(true))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers);
+const { ok, err }             = require('../../utils/components');
+const { addWarning }           = require('../../utils/database');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['addnote'];
-export const usage = '!note <@user> <note>';
+const category   = 'moderation';
+const prefixName = 'note';
+const aliases    = ['addnote', 'staffnote'];
 
-export async function execute(interaction) {
-  const user = interaction.options.getUser('user');
-  const note = interaction.options.getString('note');
-  addNote(interaction.guild.id, user.id, interaction.user.id, note);
-  await interaction.reply(ok(`note added to ${user}'s record`));
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers))
-    return message.reply(err('you need Moderate Members permission'));
+    return message.reply(err('You need the **Moderate Members** permission.'));
+
   const member = message.mentions.members.first();
-  if (!member) return message.reply(err('mention a member'));
+  if (!member) return message.reply(err('Mention a member.'));
+
   const note = args.slice(1).join(' ');
-  if (!note) return message.reply(err('provide a note'));
-  addNote(message.guild.id, member.id, message.author.id, note);
-  await message.reply(ok(`note added to ${member}'s record`));
+  if (!note) return message.reply(err('Provide a note.'));
+
+  addWarning(message.guild.id, member.id, message.author.id, `[NOTE] ${note}`);
+  return message.reply(ok(`Note saved for ${member}: **${note}**`));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

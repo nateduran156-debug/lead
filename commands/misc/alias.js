@@ -1,97 +1,64 @@
-import { SlashCommandBuilder, PermissionFlagsBits, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } from 'discord.js';
-import { getCustomAliases, addCustomAlias, removeCustomAlias } from '../../utils/database.js';
-import { ok, err, COLORS } from '../../utils/components.js';
+'use strict';
 
-const CV2 = MessageFlags.IsComponentsV2;
-const S = (size = SeparatorSpacingSize.Small, div = true) =>
-  new SeparatorBuilder().setSpacing(size).setDivider(div);
+const { getCustomAliases, addCustomAlias, removeCustomAlias } = require('../../utils/database');
+const { ok, err, card, COLORS, CV2 }   = require('../../utils/components');
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  PermissionFlagsBits,
+} = require('discord.js');
 
-export const data = new SlashCommandBuilder()
-  .setName('alias')
-  .setDescription('manage custom command shortcuts for this server')
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-  .addSubcommand(s => s
-    .setName('add')
-    .setDescription('create a custom command shortcut')
-    .addStringOption(o => o.setName('shortcut').setDescription('the short name to type').setRequired(true))
-    .addStringOption(o => o.setName('command').setDescription('the command it maps to').setRequired(true))
-  )
-  .addSubcommand(s => s
-    .setName('remove')
-    .setDescription('remove a custom shortcut')
-    .addStringOption(o => o.setName('shortcut').setDescription('shortcut to remove').setRequired(true))
-  )
-  .addSubcommand(s => s
-    .setName('list')
-    .setDescription('view all custom aliases for this server')
-  );
+const category   = 'misc';
+const prefixName = 'alias';
+const aliases    = ['shortcut', 'cmdalias'];
 
-export const aliases = [];
-export const usage = '!alias <add|remove|list> [shortcut] [command]';
+const S = (d = true) => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(d);
 
-function listPage(guildId) {
-  const aliases = getCustomAliases(guildId);
+function listPayload(guildId) {
+  const list = getCustomAliases(guildId);
   const c = new ContainerBuilder()
     .setAccentColor(COLORS.blue)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent('## Custom Aliases'));
 
-  if (!aliases.length) {
+  if (!list.length) {
     c.addSeparatorComponents(S())
-      .addTextDisplayComponents(new TextDisplayBuilder().setContent('-# No custom aliases yet'));
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent('-# No custom aliases configured yet.'));
   } else {
     c.addSeparatorComponents(S())
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        aliases.map(a => `\`${a.shortcut}\` → \`${a.target}\``).join('\n')
+        list.map(a => `\`${a.shortcut}\` → \`${a.target}\``).join('\n')
       ));
   }
 
-  return { flags: CV2, components: [c] };
+  return { flags: require('discord.js').MessageFlags.IsComponentsV2, components: [c] };
 }
 
-export async function execute(interaction) {
-  const sub = interaction.options.getSubcommand();
+async function prefixExecute(message, args) {
+  if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild))
+    return message.reply(err('You need the **Manage Server** permission to manage aliases.'));
 
-  if (sub === 'add') {
-    const shortcut = interaction.options.getString('shortcut').toLowerCase();
-    const target   = interaction.options.getString('command').toLowerCase();
-    addCustomAlias(interaction.guild.id, shortcut, target, interaction.user.id);
-    return interaction.reply(ok(`\`${shortcut}\` → \`${target}\` saved`));
-  }
-
-  if (sub === 'remove') {
-    const shortcut = interaction.options.getString('shortcut').toLowerCase();
-    const res = removeCustomAlias(interaction.guild.id, shortcut);
-    if (!res.changes) return interaction.reply(err(`no alias \`${shortcut}\` found`));
-    return interaction.reply(ok(`alias \`${shortcut}\` removed`));
-  }
-
-  if (sub === 'list') {
-    return interaction.reply(listPage(interaction.guild.id));
-  }
-}
-
-export async function prefixExecute(message, args) {
-  if (!message.member?.permissions?.has('ManageGuild')) {
-    return message.reply(err('you need Manage Server permission to manage aliases'));
-  }
-
-  const sub = args[0]?.toLowerCase();
+  const guildId = message.guild.id;
+  const sub     = args[0]?.toLowerCase();
 
   if (sub === 'add') {
     const shortcut = args[1]?.toLowerCase();
     const target   = args[2]?.toLowerCase();
-    if (!shortcut || !target) return message.reply(err('usage: `!alias add <shortcut> <command>`'));
-    addCustomAlias(message.guild.id, shortcut, target, message.author.id);
-    return message.reply(ok(`\`${shortcut}\` → \`${target}\` saved`));
+    if (!shortcut || !target) return message.reply(err('Usage: `.alias add <shortcut> <command>`'));
+    addCustomAlias(guildId, shortcut, target, message.author.id);
+    return message.reply(ok(`\`${shortcut}\` → \`${target}\` has been saved.`));
   }
 
-  if (sub === 'remove') {
+  if (sub === 'remove' || sub === 'delete') {
     const shortcut = args[1]?.toLowerCase();
-    if (!shortcut) return message.reply(err('usage: `!alias remove <shortcut>`'));
-    const res = removeCustomAlias(message.guild.id, shortcut);
-    if (!res.changes) return message.reply(err(`no alias \`${shortcut}\` found`));
-    return message.reply(ok(`alias \`${shortcut}\` removed`));
+    if (!shortcut) return message.reply(err('Provide the shortcut to remove.'));
+    const res = removeCustomAlias(guildId, shortcut);
+    if (!res.changes) return message.reply(err(`No alias \`${shortcut}\` found.`));
+    return message.reply(ok(`Alias \`${shortcut}\` has been removed.`));
   }
 
-  return message.reply(listPage(message.guild.id));
+  return message.reply(listPayload(guildId));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

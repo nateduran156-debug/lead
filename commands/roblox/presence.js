@@ -1,42 +1,54 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getUser, getUserPresence as fetchPresences } from '../../utils/roblox.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('presence')
-  .setDescription('check if a roblox user is online')
-  .addStringOption(o => o.setName('username').setDescription('roblox username').setRequired(true));
+const { card, err, COLORS }          = require('../../utils/components');
+const { getUserByUsername, getUserById, getUserPresence, getGameInfo } = require('../../utils/roblox');
 
-export const aliases = ['online', 'status2'];
-export const usage = '!presence <username>';
+const category   = 'roblox';
+const prefixName = 'presence';
+const aliases    = ['online', 'status', 'robloxstatus'];
 
-const STATUS = { 0: '⚫ offline', 1: '🌐 online (website)', 2: '🎮 in-game', 3: '🖥️ in studio' };
+async function prefixExecute(message, args) {
+  const input = args[0];
+  if (!input) return message.reply(err('Provide a Roblox username or ID.'));
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  const username = interaction.options.getString('username');
-  const u = await getUser(username).catch(() => null);
-  if (!u) return interaction.editReply(err(`**${username}** not found`));
-  const _presences = await fetchPresences([u.id]).catch(() => []);
-  const presence = _presences[0] ?? null;
-  const statusText = STATUS[presence?.userPresenceType ?? 0];
-  await interaction.editReply(card({
-    title: `${u.displayName}`,
-    desc: `**status** ${statusText}` + (presence?.lastLocation ? `\n**location** ${presence.lastLocation}` : ''),
-    color: presence?.userPresenceType > 0 ? COLORS.green : COLORS.neutral,
+  await message.channel.sendTyping().catch(() => {});
+
+  let user;
+  try {
+    user = /^\d+$/.test(input) ? await getUserById(input) : await getUserByUsername(input);
+    if (!user) return message.reply(err(`No account found for **${input}**.`));
+  } catch {
+    return message.reply(err('Failed to reach the Roblox API.'));
+  }
+
+  const userId = user.id ?? user.id;
+  const [presence] = await getUserPresence([Number(userId)]).catch(() => [null]);
+  if (!presence) return message.reply(err('Could not retrieve presence data.'));
+
+  let statusDesc;
+  let gameInfo = null;
+
+  switch (presence.userPresenceType) {
+    case 0: statusDesc = '🔴 Offline'; break;
+    case 1: statusDesc = '🌐 Online (Website)'; break;
+    case 2: {
+      statusDesc = `🎮 In Game — ${presence.lastLocation || 'Unknown'}`;
+      if (presence.universeId) {
+        gameInfo = await getGameInfo(presence.universeId).catch(() => null);
+        if (gameInfo) statusDesc = `🎮 In **${gameInfo.name}**`;
+      }
+      break;
+    }
+    case 3: statusDesc = `🔧 In Studio — ${presence.lastLocation || 'Unknown'}`; break;
+    default: statusDesc = 'Unknown';
+  }
+
+  return message.reply(card({
+    title:  user.name || user.displayName,
+    desc:   statusDesc,
+    color:  presence.userPresenceType >= 1 ? COLORS.green : COLORS.gray,
+    footer: `Last seen: ${presence.lastOnline ? new Date(presence.lastOnline).toUTCString() : 'Unknown'}`,
   }));
 }
 
-export async function prefixExecute(message, args) {
-  const username = args[0];
-  if (!username) return message.reply(err('provide a roblox username'));
-  const u = await getUser(username).catch(() => null);
-  if (!u) return message.reply(err(`**${username}** not found`));
-  const _presences = await fetchPresences([u.id]).catch(() => []);
-  const presence = _presences[0] ?? null;
-  await message.reply(card({
-    title: u.displayName,
-    desc: `**status** ${STATUS[presence?.userPresenceType ?? 0]}`,
-    color: COLORS.roblox,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

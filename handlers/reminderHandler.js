@@ -1,8 +1,10 @@
-import { getPendingReminders, markReminderFired } from '../utils/database.js';
-import { card, COLORS } from '../utils/components.js';
+'use strict';
 
-export function startReminderLoop(client) {
-  setInterval(() => checkReminders(client), 30000);
+const { getPendingReminders, markReminderFired } = require('../utils/database');
+const { card, COLORS }                            = require('../utils/components');
+
+function startReminderLoop(client) {
+  setInterval(() => checkReminders(client), 30_000);
 }
 
 async function checkReminders(client) {
@@ -14,11 +16,15 @@ async function checkReminders(client) {
       if (!channel) continue;
       const payload = card({
         title: '⏰ Reminder',
-        desc: reminder.message,
+        desc:  reminder.message,
         color: COLORS.blue,
         footer: `Set at <t:${reminder.created_at}:f>`,
       });
       await channel.send({ content: `<@${reminder.user_id}>`, ...payload });
-    } catch (e) { console.error('Reminder error:', e.message); }
+    } catch (e) {
+      console.error(`[Reminder] Error: ${e.message}`);
+    }
   }
 }
+
+module.exports = { startReminderLoop };

@@ -1,39 +1,31 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('unroleall')
-  .setDescription('remove a role from every member that has it')
-  .addRoleOption(o => o.setName('role').setDescription('role to remove').setRequired(true))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['massunrole', 'removeroleall'];
-export const usage = '!unroleall <@role>';
+const category   = 'moderation';
+const prefixName = 'unroleall';
+const aliases    = ['massunrole', 'removeroleall'];
 
-export async function execute(interaction) {
-  const role = interaction.options.getRole('role');
-  if (role.position >= interaction.member.roles.highest.position)
-    return interaction.reply(err('that role is above your highest role'));
-  await interaction.deferReply();
-  const members = await interaction.guild.members.fetch();
+async function prefixExecute(message, args) {
+  if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
+    return message.reply(err('You need the **Manage Roles** permission.'));
+
+  const role = message.mentions.roles.first();
+  if (!role) return message.reply(err('Mention a role to remove from all members.'));
+  if (role.position >= message.member.roles.highest.position)
+    return message.reply(err('You cannot remove a role equal to or above your highest role.'));
+
+  const members = await message.guild.members.fetch();
   let removed = 0;
+
   for (const [, m] of members) {
     if (m.roles.cache.has(role.id)) {
       await m.roles.remove(role).then(() => removed++).catch(() => {});
     }
   }
-  await interaction.editReply(ok(`removed ${role} from **${removed}** members`));
+
+  message.reply(ok(`Removed ${role} from **${removed}** member(s).`));
 }
 
-export async function prefixExecute(message, args) {
-  if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
-    return message.reply(err('you need Manage Roles permission'));
-  const role = message.mentions.roles.first();
-  if (!role) return message.reply(err('mention a role'));
-  const members = await message.guild.members.fetch();
-  let removed = 0;
-  for (const [, m] of members) {
-    if (m.roles.cache.has(role.id)) await m.roles.remove(role).then(() => removed++).catch(() => {});
-  }
-  await message.reply(ok(`removed ${role} from **${removed}** members`));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

@@ -1,39 +1,34 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getUser, getOutfits } from '../../utils/roblox.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('outfit')
-  .setDescription('view a roblox user\'s outfits')
-  .addStringOption(o => o.setName('username').setDescription('roblox username').setRequired(true));
+const { card, err, COLORS }          = require('../../utils/components');
+const { getUserByUsername, getUserOutfits, getAvatarThumbnail } = require('../../utils/roblox');
 
-export const aliases = ['outfits', 'rofits'];
-export const usage = '!outfit <username>';
+const category   = 'roblox';
+const prefixName = 'outfit';
+const aliases    = ['avatar', 'avatarlook'];
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  const username = interaction.options.getString('username');
-  const u = await getUser(username).catch(() => null);
-  if (!u) return interaction.editReply(err(`**${username}** not found`));
-  const outfits = await getOutfits(u.id).catch(() => []);
-  if (!outfits.length) return interaction.editReply(err(`${u.displayName} has no outfits`));
-  await interaction.editReply(card({
-    title: `${u.displayName}'s outfits`,
-    desc: outfits.slice(0, 15).map((o, i) => `**${i + 1}.** ${o.name}`).join('\n'),
-    color: COLORS.roblox,
-    footer: `${outfits.length} outfit${outfits.length === 1 ? '' : 's'}`,
+async function prefixExecute(message, args) {
+  const input = args[0];
+  if (!input) return message.reply(err('Provide a Roblox username or ID.'));
+
+  await message.channel.sendTyping().catch(() => {});
+
+  let user;
+  try {
+    user = /^\d+$/.test(input) ? { id: input, name: input } : await getUserByUsername(input);
+  } catch {
+    return message.reply(err('Failed to reach the Roblox API.'));
+  }
+  if (!user) return message.reply(err(`No account found for **${input}**.`));
+
+  const thumbnail = await getAvatarThumbnail(user.id).catch(() => null);
+
+  return message.reply(card({
+    title:  `${user.name ?? input}'s Avatar`,
+    color:  COLORS.teal,
+    image:  thumbnail,
+    footer: thumbnail ? '' : 'Avatar thumbnail unavailable.',
   }));
 }
 
-export async function prefixExecute(message, args) {
-  const username = args[0];
-  if (!username) return message.reply(err('provide a roblox username'));
-  const u = await getUser(username).catch(() => null);
-  if (!u) return message.reply(err(`**${username}** not found`));
-  const outfits = await getOutfits(u.id).catch(() => []);
-  await message.reply(card({
-    title: `${u.displayName}'s outfits — ${outfits.length}`,
-    desc: outfits.length ? outfits.slice(0, 10).map(o => o.name).join('\n') : 'no outfits',
-    color: COLORS.roblox,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

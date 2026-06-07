@@ -1,25 +1,21 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('ping')
-  .setDescription('check the bot latency');
+const { card, COLORS } = require('../../utils/components');
 
-export const aliases = ['pong', 'latency'];
-export const usage = '!ping';
+const category   = 'misc';
+const prefixName = 'ping';
+const aliases    = ['p', 'latency'];
 
-export async function execute(interaction) {
-  const sent = await interaction.deferReply({ fetchReply: true });
-  const rtt = sent.createdTimestamp - interaction.createdTimestamp;
-  await interaction.editReply(card({
-    title: 'Pong 🏓',
-    desc: `**gateway** ${interaction.client.ws.ping}ms\n**roundtrip** ${rtt}ms`,
-    color: COLORS.blue,
+async function prefixExecute(message) {
+  const sent  = await message.reply(card({ title: 'Pinging…', color: COLORS.gray }));
+  const latency = sent.createdTimestamp - message.createdTimestamp;
+  const ws      = message.client.ws.ping;
+
+  await sent.edit(card({
+    title: '🏓 Pong!',
+    desc:  `**Message latency** ${latency}ms\n**WebSocket heartbeat** ${ws}ms`,
+    color: latency < 150 ? COLORS.green : latency < 400 ? COLORS.yellow : COLORS.red,
   }));
 }
 
-export async function prefixExecute(message) {
-  const sent = await message.reply('...');
-  const rtt = sent.createdTimestamp - message.createdTimestamp;
-  await sent.edit(card({ title: 'Pong 🏓', desc: `**gateway** ${message.client.ws.ping}ms\n**roundtrip** ${rtt}ms`, color: COLORS.blue }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

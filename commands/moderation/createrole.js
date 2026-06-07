@@ -1,41 +1,25 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('createrole')
-  .setDescription('create a new role')
-  .addStringOption(o => o.setName('name').setDescription('role name').setRequired(true))
-  .addStringOption(o => o.setName('color').setDescription('hex color e.g. #FF0000'))
-  .addBooleanOption(o => o.setName('hoist').setDescription('show separately in member list'))
-  .addBooleanOption(o => o.setName('mentionable').setDescription('allow everyone to mention this role'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['newrole', 'cr'];
-export const usage = '!createrole <name> [color]';
+const category   = 'moderation';
+const prefixName = 'createrole';
+const aliases    = ['cr', 'newrole', 'makerole'];
 
-export async function execute(interaction) {
-  const name = interaction.options.getString('name');
-  const color = interaction.options.getString('color') || null;
-  const hoist = interaction.options.getBoolean('hoist') ?? false;
-  const mentionable = interaction.options.getBoolean('mentionable') ?? false;
-  try {
-    const role = await interaction.guild.roles.create({ name, color, hoist, mentionable });
-    await interaction.reply(ok(`created role ${role}`));
-  } catch (e) {
-    await interaction.reply(err(`failed: ${e.message}`));
-  }
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
-    return message.reply(err('you need Manage Roles permission'));
-  const name = args[0];
-  if (!name) return message.reply(err('provide a role name'));
-  const color = args[1] || null;
+    return message.reply(err('You need the **Manage Roles** permission.'));
+
+  const name  = args.join(' ');
+  if (!name) return message.reply(err('Provide a role name.'));
+
   try {
-    const role = await message.guild.roles.create({ name, color });
-    await message.reply(ok(`created role ${role}`));
+    const role = await message.guild.roles.create({ name, reason: `Created by ${message.author.tag}` });
+    message.reply(ok(`Role ${role} has been created.`));
   } catch (e) {
-    await message.reply(err(`failed: ${e.message}`));
+    message.reply(err(`Failed: ${e.message}`));
   }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

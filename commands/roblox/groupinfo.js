@@ -1,45 +1,40 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getGroup } from '../../utils/roblox.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('groupinfo')
-  .setDescription('look up a roblox group by id')
-  .addStringOption(o => o.setName('groupid').setDescription('group id').setRequired(true));
+const { card, err, COLORS }   = require('../../utils/components');
+const { getGroupInfo, getGroupIcon } = require('../../utils/roblox');
 
-export const aliases = ['gi', 'group'];
-export const usage = '!groupinfo <groupid>';
+const category   = 'roblox';
+const prefixName = 'groupinfo';
+const aliases    = ['group', 'gi'];
 
-export async function execute(interaction) {
-  const groupId = interaction.options.getString('groupid');
-  await interaction.deferReply();
-  const g = await getGroup(groupId).catch(() => null);
-  if (!g) return interaction.editReply(err(`group **${groupId}** not found`));
-  await interaction.editReply(card({
-    title: g.name,
-    desc: g.description?.slice(0, 300) || 'no description',
-    fields: [
-      { name: 'Members', value: g.memberCount?.toLocaleString() ?? '?', inline: true },
-      { name: 'Owner', value: g.owner?.username ?? 'no owner', inline: true },
-      { name: 'ID', value: String(g.id), inline: true },
-      { name: 'Public', value: g.publicEntryAllowed ? 'yes' : 'no (locked)', inline: true },
-    ],
-    color: COLORS.roblox,
-    footer: `roblox.com/groups/${g.id}`,
-  }));
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   const groupId = args[0];
-  if (!groupId) return message.reply(err('provide a group id'));
-  const g = await getGroup(groupId).catch(() => null);
-  if (!g) return message.reply(err(`group **${groupId}** not found`));
-  await message.reply(card({
-    title: g.name,
+  if (!groupId) return message.reply(err('Provide a Roblox group ID.'));
+
+  await message.channel.sendTyping().catch(() => {});
+
+  let group;
+  try {
+    group = await getGroupInfo(groupId);
+  } catch {
+    return message.reply(err('Group not found or API unavailable.'));
+  }
+
+  const icon = await getGroupIcon(groupId).catch(() => null);
+
+  return message.reply(card({
+    title:  group.name,
     fields: [
-      { name: 'Members', value: g.memberCount?.toLocaleString() ?? '?', inline: true },
-      { name: 'Owner', value: g.owner?.username ?? 'none', inline: true },
+      { name: 'ID',          value: `\`${group.id}\`` },
+      { name: 'Members',     value: `${group.memberCount?.toLocaleString()}` },
+      { name: 'Owner',       value: group.owner?.username ?? 'None' },
+      { name: 'Public',      value: group.publicEntryAllowed ? 'Yes' : 'No' },
+      { name: 'Description', value: group.description?.slice(0, 200) || 'None' },
     ],
-    color: COLORS.roblox,
+    color:  COLORS.teal,
+    image:  icon,
+    footer: `https://www.roblox.com/groups/${group.id}`,
   }));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

@@ -1,28 +1,21 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('avatar')
-  .setDescription('get a user\'s avatar')
-  .addUserOption(o => o.setName('user').setDescription('user (default: yourself)'));
+const { card, err, COLORS } = require('../../utils/components');
 
-export const aliases = ['av', 'pfp', 'icon'];
-export const usage = '!avatar [@user]';
+const category   = 'server';
+const prefixName = 'avatar';
+const aliases    = ['av', 'pfp', 'icon'];
 
-export async function execute(interaction) {
-  const user = interaction.options.getUser('user') || interaction.user;
-  const member = interaction.guild.members.cache.get(user.id);
-  const url = member?.displayAvatarURL({ size: 1024 }) || user.displayAvatarURL({ size: 1024 });
-  await interaction.reply(card({
+async function prefixExecute(message, args) {
+  const user = message.mentions.users.first() || message.author;
+  const url  = user.displayAvatarURL({ size: 1024, extension: 'png' });
+
+  return message.reply(card({
     title: `${user.username}'s avatar`,
     color: COLORS.blue,
     image: url,
-    footer: user.id,
+    footer: url,
   }));
 }
 
-export async function prefixExecute(message, args) {
-  const user = message.mentions.users.first() || message.author;
-  const url = user.displayAvatarURL({ size: 1024 });
-  await message.reply(card({ title: `${user.username}'s avatar`, image: url, color: COLORS.blue }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

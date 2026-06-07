@@ -1,96 +1,112 @@
-const { SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-const db = require('../utils/database');
-const roblox = require('../utils/roblox');
-const C = require('../utils/components');
-const crypto = require('crypto');
+'use strict';
 
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('verify')
-    .setDescription('Link your Roblox account to your Discord account'),
+const {
+  getVerifyConfig, setVerifyConfig,
+  getVerifiedUser, setVerifiedUser, removeVerifiedUser,
+} = require('../utils/database');
+const {
+  getUserByUsername, getAuthenticatedUser,
+} = require('../utils/roblox');
+const { ok, err, card, COLORS }     = require('../utils/components');
+const { PermissionFlagsBits }        = require('discord.js');
+const { sendLog }                    = require('../utils/logger');
 
-  prefix: { name: 'verify', aliases: [] },
-  usage: 'verify <roblox_username>',
-  category: 'verify',
+const category   = 'verify';
+const prefixName = 'verify';
+const aliases    = ['v', 'rverify'];
 
-  async execute(interaction) {
-    const existing = db.prepare('SELECT * FROM verifications WHERE discord_id = ? AND guild_id = ?')
-      .get(interaction.user.id, interaction.guild.id);
-    if (existing) {
-      return interaction.reply(C.ok(
-        `**Already Verified**\n\nYou are linked to **${existing.roblox_username}** (\`${existing.roblox_id}\`).\n\nContact staff if you need to re-verify.`,
-        true
-      ));
-    }
+async function prefixExecute(message, args) {
+  const guildId = message.guild.id;
+  const sub     = args[0]?.toLowerCase();
+  const cfg     = getVerifyConfig(guildId);
 
-    const modal = new ModalBuilder()
-      .setCustomId('verify_modal')
-      .setTitle('Roblox Verification')
-      .addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('roblox_username')
-            .setLabel('Your Roblox Username')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter your exact Roblox username')
-            .setRequired(true)
-        )
-      );
-    await interaction.showModal(modal);
-  },
+  // ── .verify setup ─────────────────────────────────────────────────────────
+  if (sub === 'setup') {
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild))
+      return message.reply(err('You need the **Manage Server** permission.'));
 
-  async prefixExecute(message, args) {
-    const guildId = message.guild.id;
+    const role = message.mentions.roles.first();
+    const ch   = message.mentions.channels.first();
 
-    const existing = db.prepare('SELECT * FROM verifications WHERE discord_id = ? AND guild_id = ?')
-      .get(message.author.id, guildId);
-    if (existing) {
-      return C.prefixOk(message,
-        `**Already Verified**\n\nYou are linked to **${existing.roblox_username}** (\`${existing.roblox_id}\`).\n\nContact staff if you need to re-verify.`
-      );
-    }
+    if (role) setVerifyConfig(guildId, { verified_role: role.id });
+    if (ch)   setVerifyConfig(guildId, { log_channel: ch.id });
 
-    const username = args[0];
-    if (!username) {
-      return message.reply(C.commandCard({
-        name: 'verify',
-        description: 'Link your Roblox account to your Discord account.',
-        syntax: `.verify <roblox_username>`,
-        example: `.verify builderman`,
-        aliases: [],
-      }));
-    }
-
-    let robloxUser;
-    try {
-      const found = await roblox.getUserByUsername(username);
-      if (!found) throw new Error('not found');
-      robloxUser = await roblox.getUserById(found.id);
-    } catch {
-      return C.prefixErr(message, `Roblox user \`${username}\` not found. Check the spelling and try again.`);
-    }
-
-    const alreadyLinked = db.prepare('SELECT * FROM verifications WHERE roblox_id = ? AND guild_id = ?')
-      .get(String(robloxUser.id), guildId);
-    if (alreadyLinked) {
-      return C.prefixErr(message, `Roblox account **${robloxUser.name}** is already linked to another Discord account.`);
-    }
-
-    const code = `LEAD-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    db.prepare('INSERT OR REPLACE INTO pending_verifications (discord_id, guild_id, roblox_id, roblox_username, code) VALUES (?, ?, ?, ?, ?)')
-      .run(message.author.id, guildId, String(robloxUser.id), robloxUser.name, code);
-
-    return C.prefixSend(message, [
-      C.container([
-        C.textDisplay(
-          `**Step 1 of 2 — Add Code to Profile**\n\n` +
-          `Roblox user found: **${robloxUser.name}** (\`${robloxUser.id}\`)\n\n` +
-          `Add the following code to your Roblox **profile description**, then click the button below.\n\n` +
-          `\`\`\`\n${code}\n\`\`\``
-        ),
-        C.separator(),
-        C.actionRow([C.successButton('I added it — Verify Now', 'verify_check')]),
-      ], C.COLORS.info)
-    ]);
+    return message.reply(ok(
+      `Verification configured.\n${role ? `Verified role: ${role}\n` : ''}${ch ? `Log channel: ${ch}` : ''}`
+    ));
   }
-};
+
+  // ── .verify setcookie ─────────────────────────────────────────────────────
+  if (sub === 'setcookie') {
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator))
+      return message.reply(err('You need the **Administrator** permission.'));
+    const cookie = args[1];
+    if (!cookie) return message.reply(err('Provide the Roblox cookie.'));
+    setVerifyConfig(guildId, { cookie });
+    await message.delete().catch(() => {});
+    return message.channel.send(ok('Cookie stored securely. The message containing it has been deleted.'));
+  }
+
+  // ── .verify <roblox_username> ─────────────────────────────────────────────
+  const username = sub;
+  if (!username) {
+    return message.reply(card({
+      title: 'Verify — Usage',
+      desc: [
+        '`.verify <roblox_username>` — link your Roblox account',
+        '`.verify unlink` — remove your verification',
+        '`.verify check [@user]` — check a user\'s linked account',
+        '`.verify setup @role [#log_channel]` — configure verification (requires Manage Server)',
+      ].join('\n'),
+      color: COLORS.blue,
+    }));
+  }
+
+  if (sub === 'unlink') {
+    removeVerifiedUser(guildId, message.author.id);
+    return message.reply(ok('Your Roblox account has been unlinked.'));
+  }
+
+  if (sub === 'check') {
+    const target = message.mentions.users.first() || message.author;
+    const linked = getVerifiedUser(guildId, target.id);
+    if (!linked) return message.reply(card({ title: 'Verification', desc: `${target.username} has no linked Roblox account.`, color: COLORS.gray }));
+    return message.reply(card({
+      title: `${target.username}'s Roblox Account`,
+      desc: `**Username** ${linked.roblox_name}\n**ID** \`${linked.roblox_id}\`\n**Verified** <t:${linked.verified_at}:R>`,
+      color: COLORS.green,
+    }));
+  }
+
+  // Attempt to link the account
+  let robloxUser;
+  try {
+    robloxUser = await getUserByUsername(username);
+  } catch {
+    return message.reply(err('Failed to reach the Roblox API. Please try again later.'));
+  }
+
+  if (!robloxUser) return message.reply(err(`No Roblox account found for username **${username}**.`));
+
+  setVerifiedUser(guildId, message.author.id, String(robloxUser.id), robloxUser.name);
+
+  // Assign the verified role if configured
+  if (cfg?.verified_role) {
+    const role = message.guild.roles.cache.get(cfg.verified_role);
+    if (role) {
+      await message.member.roles.add(role).catch(() => {});
+
+      // Rename to Roblox username
+      await message.member.setNickname(robloxUser.name).catch(() => {});
+    }
+  }
+
+  await sendLog(message.guild, 'general', {
+    color: COLORS.green,
+    content: `✅ **Verified** — ${message.author} linked to Roblox account **${robloxUser.name}** (\`${robloxUser.id}\`)`,
+  });
+
+  return message.reply(ok(`Successfully linked to **${robloxUser.name}** (ID: \`${robloxUser.id}\`).`));
+}
+
+module.exports = { prefixName, aliases, category, prefixExecute };

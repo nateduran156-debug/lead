@@ -1,47 +1,31 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { modCard, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('ban')
-  .setDescription('ban a member from the server')
-  .addUserOption(o => o.setName('user').setDescription('user to ban').setRequired(true))
-  .addStringOption(o => o.setName('reason').setDescription('reason'))
-  .addIntegerOption(o => o.setName('days').setDescription('delete message history (0-7 days)').setMinValue(0).setMaxValue(7))
-  .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers);
+const { ok, err, modCard }     = require('../../utils/components');
+const { addWarning }            = require('../../utils/database');
+const { PermissionFlagsBits }   = require('discord.js');
+const { sendLog }               = require('../../utils/logger');
 
-export const aliases = ['hackban'];
-export const usage = '!ban <@user|id> [reason]';
+const category   = 'moderation';
+const prefixName = 'ban';
+const aliases    = ['b', 'banish'];
 
-export async function execute(interaction) {
-  const user = interaction.options.getUser('user');
-  const reason = interaction.options.getString('reason') || 'no reason provided';
-  const days = interaction.options.getInteger('days') || 0;
-  const member = interaction.guild.members.cache.get(user.id);
-
-  if (member) {
-    if (!member.bannable) return interaction.reply(err('i can\'t ban that user'));
-    if (member.roles.highest.position >= interaction.member.roles.highest.position)
-      return interaction.reply(err('that user has an equal or higher role than you'));
-  }
-
-  try {
-    await interaction.guild.bans.create(user.id, { reason, deleteMessageDays: days });
-    await interaction.reply(modCard({ action: 'Banned', user, mod: interaction.user, reason }));
-  } catch (e) {
-    await interaction.reply(err(`ban failed: ${e.message}`));
-  }
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.BanMembers))
-    return message.reply(err('you need Ban Members permission'));
-  const user = message.mentions.users.first() || await message.client.users.fetch(args[0]).catch(() => null);
-  if (!user) return message.reply(err('mention a user or provide their id'));
-  const reason = args.slice(message.mentions.users.size ? 1 : 2).join(' ') || 'no reason provided';
+    return message.reply(err('You need the **Ban Members** permission.'));
+
+  const member = message.mentions.members.first();
+  if (!member) return message.reply(err('Mention a member to ban.'));
+  if (!member.bannable) return message.reply(err('I cannot ban that member.'));
+
+  const reason = args.slice(1).join(' ') || 'No reason provided';
+
   try {
-    await message.guild.bans.create(user.id, { reason });
-    await message.reply(modCard({ action: 'Banned', user, mod: message.author, reason }));
+    await member.ban({ reason, deleteMessageSeconds: 604800 });
+    await message.reply(modCard({ action: 'Banned', user: member.user, mod: message.author, reason }));
+    await sendLog(message.guild, 'mod', { color: 0xED4245, content: `🔨 **Banned** — ${member.user}\nMod: ${message.author}\nReason: ${reason}` });
   } catch (e) {
-    await message.reply(err(`ban failed: ${e.message}`));
+    message.reply(err(`Ban failed: ${e.message}`));
   }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

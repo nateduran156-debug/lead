@@ -1,36 +1,28 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { ok, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('deletechannel')
-  .setDescription('delete a channel')
-  .addChannelOption(o => o.setName('channel').setDescription('channel to delete').setRequired(true))
-  .addStringOption(o => o.setName('reason').setDescription('reason'))
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels);
+const { ok, err }             = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['dc2', 'removechannel'];
-export const usage = '!deletechannel #channel [reason]';
+const category   = 'moderation';
+const prefixName = 'deletechannel';
+const aliases    = ['dc', 'delchannel', 'rmchannel'];
 
-export async function execute(interaction) {
-  const ch = interaction.options.getChannel('channel');
-  const reason = interaction.options.getString('reason') || 'no reason';
-  try {
-    await ch.delete(reason);
-    await interaction.reply(ok(`deleted channel **${ch.name}**`));
-  } catch (e) {
-    await interaction.reply(err(`failed: ${e.message}`));
-  }
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels))
-    return message.reply(err('you need Manage Channels permission'));
-  const ch = message.mentions.channels.first();
-  if (!ch) return message.reply(err('mention a channel to delete'));
+    return message.reply(err('You need the **Manage Channels** permission.'));
+
+  const ch     = message.mentions.channels.first() || message.channel;
+  const reason = args.join(' ') || 'No reason provided';
+
   try {
-    await ch.delete();
-    await message.reply(ok(`deleted channel **${ch.name}**`));
+    const name = ch.name;
+    await ch.delete(reason);
+    if (ch.id !== message.channel.id) {
+      message.reply(ok(`Channel **#${name}** has been deleted.`));
+    }
   } catch (e) {
-    await message.reply(err(`failed: ${e.message}`));
+    message.reply(err(`Failed: ${e.message}`));
   }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

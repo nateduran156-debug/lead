@@ -1,46 +1,38 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, COLORS } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('botinfo')
-  .setDescription('info about this bot');
+const { card, COLORS } = require('../../utils/components');
+const os               = require('os');
 
-export const aliases = ['about', 'bi'];
-export const usage = '!botinfo';
+const category   = 'misc';
+const prefixName = 'botinfo';
+const aliases    = ['bi', 'about', 'info'];
 
-export async function execute(interaction) {
-  const client = interaction.client;
-  const uptime = process.uptime();
-  const h = Math.floor(uptime / 3600);
-  const m = Math.floor((uptime % 3600) / 60);
-  const s = Math.floor(uptime % 60);
-  await interaction.reply(card({
-    title: `${client.user.username}`,
-    desc: `a discord bot for roblox group management and server moderation`,
-    fields: [
-      { name: 'Servers', value: String(client.guilds.cache.size), inline: true },
-      { name: 'Commands', value: String(client.commands.size), inline: true },
-      { name: 'Uptime', value: `${h}h ${m}m ${s}s`, inline: true },
-      { name: 'Ping', value: `${client.ws.ping}ms`, inline: true },
-      { name: 'discord.js', value: 'v14', inline: true },
-      { name: 'Node', value: process.version, inline: true },
-    ],
-    color: COLORS.blue,
-    footer: `dwa#2984`,
-  }));
+function formatUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h ${m % 60}m ${s % 60}s`;
 }
 
-export async function prefixExecute(message) {
+async function prefixExecute(message) {
   const client = message.client;
-  const uptime = process.uptime();
-  const h = Math.floor(uptime / 3600), m = Math.floor((uptime % 3600) / 60), s = Math.floor(uptime % 60);
-  await message.reply(card({
+  const mem    = process.memoryUsage();
+  const usedMb = (mem.heapUsed / 1024 / 1024).toFixed(1);
+
+  return message.reply(card({
     title: client.user.username,
     fields: [
-      { name: 'Servers', value: String(client.guilds.cache.size), inline: true },
-      { name: 'Commands', value: String(client.commands.size), inline: true },
-      { name: 'Uptime', value: `${h}h ${m}m ${s}s`, inline: true },
+      { name: 'Servers',  value: `${client.guilds.cache.size}` },
+      { name: 'Users',    value: `${client.guilds.cache.reduce((a, g) => a + g.memberCount, 0).toLocaleString()}` },
+      { name: 'Uptime',   value: formatUptime(process.uptime() * 1000) },
+      { name: 'Memory',   value: `${usedMb} MB` },
+      { name: 'Node.js',  value: process.version },
+      { name: 'Platform', value: `${os.type()} ${os.arch()}` },
     ],
     color: COLORS.blue,
+    footer: `discord.js v${require('discord.js').version}`,
   }));
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };

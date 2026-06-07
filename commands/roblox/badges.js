@@ -1,39 +1,36 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { card, err, COLORS } from '../../utils/components.js';
-import { getUser, getBadges } from '../../utils/roblox.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('badges')
-  .setDescription('view a roblox user\'s badges')
-  .addStringOption(o => o.setName('username').setDescription('roblox username').setRequired(true));
+const { card, err, COLORS }           = require('../../utils/components');
+const { getUserByUsername, getUserBadges } = require('../../utils/roblox');
 
-export const aliases = ['rbadges', 'userbadges'];
-export const usage = '!badges <username>';
+const category   = 'roblox';
+const prefixName = 'badges';
+const aliases    = ['badge', 'rb'];
 
-export async function execute(interaction) {
-  await interaction.deferReply();
-  const username = interaction.options.getString('username');
-  const u = await getUser(username).catch(() => null);
-  if (!u) return interaction.editReply(err(`**${username}** not found`));
-  const badges = await getBadges(u.id).catch(() => []);
-  if (!badges.length) return interaction.editReply(err(`${u.displayName} has no badges`));
-  await interaction.editReply(card({
-    title: `${u.displayName}'s badges`,
-    desc: badges.slice(0, 15).map(b => `**${b.name}**`).join(', '),
-    color: COLORS.roblox,
-    footer: `${badges.length} badge${badges.length === 1 ? '' : 's'} total`,
+async function prefixExecute(message, args) {
+  const input = args[0];
+  if (!input) return message.reply(err('Provide a Roblox username or ID.'));
+
+  await message.channel.sendTyping().catch(() => {});
+
+  let user;
+  try {
+    user = /^\d+$/.test(input) ? { id: input, name: input } : await getUserByUsername(input);
+  } catch {
+    return message.reply(err('Failed to reach the Roblox API.'));
+  }
+  if (!user) return message.reply(err(`No account found for **${input}**.`));
+
+  const badges = await getUserBadges(user.id).catch(() => []);
+
+  if (!badges.length) return message.reply(card({ title: `${user.name ?? input}'s Badges`, desc: 'No recent badges.', color: COLORS.gray }));
+
+  return message.reply(card({
+    title:  `${user.name ?? input}'s Recent Badges`,
+    desc:   badges.slice(0, 15).map(b => `**${b.name}** — ${b.description?.slice(0, 60) || 'No description'}`).join('\n'),
+    color:  COLORS.gold,
+    footer: `Showing up to 15 most recent badges`,
   }));
 }
 
-export async function prefixExecute(message, args) {
-  const username = args[0];
-  if (!username) return message.reply(err('provide a roblox username'));
-  const u = await getUser(username).catch(() => null);
-  if (!u) return message.reply(err(`**${username}** not found`));
-  const badges = await getBadges(u.id).catch(() => []);
-  await message.reply(card({
-    title: `${u.displayName}'s badges — ${badges.length}`,
-    desc: badges.length ? badges.slice(0, 10).map(b => b.name).join(', ') : 'no badges',
-    color: COLORS.roblox,
-  }));
-}
+module.exports = { prefixName, aliases, category, prefixExecute };

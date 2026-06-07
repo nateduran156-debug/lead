@@ -1,43 +1,35 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { modCard, err } from '../../utils/components.js';
+'use strict';
 
-export const data = new SlashCommandBuilder()
-  .setName('softban')
-  .setDescription('ban and immediately unban a member to delete their messages')
-  .addUserOption(o => o.setName('user').setDescription('user to softban').setRequired(true))
-  .addStringOption(o => o.setName('reason').setDescription('reason'))
-  .addIntegerOption(o => o.setName('days').setDescription('days of messages to delete (1-7)').setMinValue(1).setMaxValue(7))
-  .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers);
+const { ok, err, modCard }   = require('../../utils/components');
+const { PermissionFlagsBits } = require('discord.js');
 
-export const aliases = ['sb'];
-export const usage = '!softban <@user> [reason]';
+const category   = 'moderation';
+const prefixName = 'softban';
+const aliases    = ['sb'];
 
-export async function execute(interaction) {
-  const user = interaction.options.getUser('user');
-  const reason = interaction.options.getString('reason') || 'no reason provided';
-  const days = interaction.options.getInteger('days') || 7;
-  const member = interaction.guild.members.cache.get(user.id);
-  if (member && !member.bannable) return interaction.reply(err('i can\'t ban that user'));
-  try {
-    await interaction.guild.bans.create(user.id, { reason, deleteMessageDays: days });
-    await interaction.guild.bans.remove(user.id);
-    await interaction.reply(modCard({ action: 'Softbanned', user, mod: interaction.user, reason, extra: { 'Deleted': `${days} days of messages` } }));
-  } catch (e) {
-    await interaction.reply(err(`softban failed: ${e.message}`));
-  }
-}
-
-export async function prefixExecute(message, args) {
+async function prefixExecute(message, args) {
   if (!message.member.permissions.has(PermissionFlagsBits.BanMembers))
-    return message.reply(err('you need Ban Members permission'));
+    return message.reply(err('You need the **Ban Members** permission.'));
+
   const member = message.mentions.members.first();
-  if (!member) return message.reply(err('mention a member'));
-  const reason = args.slice(1).join(' ') || 'no reason provided';
+  if (!member) return message.reply(err('Mention a member to soft-ban.'));
+  if (!member.bannable) return message.reply(err('I cannot ban that member.'));
+
+  const reason = args.slice(1).join(' ') || 'No reason provided';
+
   try {
-    await message.guild.bans.create(member.id, { reason, deleteMessageDays: 7 });
+    await message.guild.bans.create(member.id, { reason, deleteMessageSeconds: 604800 });
     await message.guild.bans.remove(member.id);
-    await message.reply(modCard({ action: 'Softbanned', user: member.user, mod: message.author, reason }));
+    message.reply(modCard({
+      action: 'Soft Banned',
+      user: member.user,
+      mod:  message.author,
+      reason,
+      extra: { 'Deleted': '7 days of messages' },
+    }));
   } catch (e) {
-    await message.reply(err(`softban failed: ${e.message}`));
+    message.reply(err(`Soft ban failed: ${e.message}`));
   }
 }
+
+module.exports = { prefixName, aliases, category, prefixExecute };
