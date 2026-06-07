@@ -1,6 +1,6 @@
 'use strict';
 
-const { db, getGiveaway, updateGiveaway }         = require('../utils/database');
+const { getActiveGiveaways, updateGiveaway } = require('../utils/database');
 const { ContainerBuilder, TextDisplayBuilder, MessageFlags } = require('discord.js');
 
 const CV2 = MessageFlags.IsComponentsV2;
@@ -11,7 +11,7 @@ function startGiveawayLoop(client) {
 
 async function checkGiveaways(client) {
   const now     = Math.floor(Date.now() / 1000);
-  const expired = db.prepare("SELECT * FROM giveaways WHERE status = 'active' AND ends_at <= ?").all(now);
+  const expired = getActiveGiveaways().filter(gw => gw.ends_at <= now);
   for (const gw of expired) {
     await endGiveaway(client, gw);
   }
