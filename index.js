@@ -1,5 +1,23 @@
 'use strict';
 
+const { execSync } = require('child_process');
+const fs   = require('fs');
+const path = require('path');
+
+// Safety net: install deps if discord.js is missing
+try {
+  require.resolve('discord.js');
+} catch (_) {
+  console.log('[Start] discord.js not found — running npm install...');
+  try {
+    execSync('npm install --omit=dev', { stdio: 'inherit', cwd: __dirname });
+    console.log('[Start] Dependencies installed successfully.');
+  } catch (e) {
+    console.error('[Start] npm install failed:', e.message);
+    process.exit(1);
+  }
+}
+
 const fs   = require('fs');
 const path = require('path');
 

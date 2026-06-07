@@ -2,7 +2,7 @@ FROM node:18-bullseye
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package*.json ./
 
 RUN npm install --omit=dev
 

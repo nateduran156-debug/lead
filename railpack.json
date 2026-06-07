@@ -4,6 +4,6 @@
     "cmd": "npm install"
   },
   "deploy": {
-    "cmd": "node src/index.js"
+    "cmd": "node index.js"
   }
 }
