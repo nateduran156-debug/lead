@@ -52,14 +52,6 @@ module.exports = {
       return message.reply(err('You are not authorized to use this command.'));
     }
 
-    // Moderation commands require Administrator permission
-    if (category === 'moderation') {
-      const isOwner = message.member.id === OWNER_ID || message.member.id === message.guild.ownerId;
-      if (!isOwner && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return message.reply(err('You need the **Administrator** permission to use moderation commands.'));
-      }
-    }
-
     try {
       await cmd.prefixExecute(message, args);
     } catch (e) {
